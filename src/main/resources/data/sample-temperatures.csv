@@ -1,0 +1,19 @@
+Region,Country,State,City,Month,Day,Year,AvgTemperature
+North America,US,Texas,Longview,1,1,2025,45.0
+North America,US,Texas,Longview,1,2,2025,48.5
+North America,US,Texas,Longview,1,3,2025,42.0
+North America,US,Texas,Longview,7,1,2025,86.0
+North America,US,Texas,Longview,7,2,2025,89.0
+North America,US,Texas,Longview,7,3,2025,87.5
+Europe,UK,,London,1,1,2025,38.0
+Europe,UK,,London,1,2,2025,40.0
+Europe,UK,,London,1,3,2025,37.0
+Europe,UK,,London,7,1,2025,67.0
+Europe,UK,,London,7,2,2025,70.0
+Europe,UK,,London,7,3,2025,68.5
+Asia,Japan,,Tokyo,1,1,2025,41.0
+Asia,Japan,,Tokyo,1,2,2025,43.0
+Asia,Japan,,Tokyo,1,3,2025,39.0
+Asia,Japan,,Tokyo,7,1,2025,80.0
+Asia,Japan,,Tokyo,7,2,2025,83.0
+Asia,Japan,,Tokyo,7,3,2025,82.0
