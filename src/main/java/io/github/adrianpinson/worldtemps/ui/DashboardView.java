@@ -2,11 +2,14 @@ package io.github.adrianpinson.worldtemps.ui;
 
 import io.github.adrianpinson.worldtemps.importer.CsvTemperatureLoader;
 import io.github.adrianpinson.worldtemps.importer.CsvTemperatureLoader.ImportResult;
+import io.github.adrianpinson.worldtemps.exporter.CsvExporter;
 import io.github.adrianpinson.worldtemps.model.Reading;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Filter;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Location;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Result;
+import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis;
+import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis.Resolution;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -49,6 +52,14 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private final ComboBox<String> region = new ComboBox<>();
     private final ComboBox<String> country = new ComboBox<>();
     private final ComboBox<Location> city = new ComboBox<>();
+    private final ComboBox<Location> comparisonA = new ComboBox<>();
+    private final ComboBox<Location> comparisonB = new ComboBox<>();
+    private final ComboBox<Resolution> resolution = new ComboBox<>();
+    private final Button compare = new Button("Compare cities");
+    private final HBox comparisonControls = new HBox(10);
+    private final MenuButton exportCsv = new MenuButton("Export CSV");
+    private final MenuItem exportReadings = new MenuItem("Filtered readings…");
+    private final MenuItem exportChart = new MenuItem("Chart data…");
     private final DatePicker from = new DatePicker();
     private final DatePicker to = new DatePicker();
     private final Button apply = new Button("Apply filters");
@@ -80,12 +91,15 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private final Label chartEmpty = new Label("Select a city to view its trend.");
     private final VBox filterContent = new VBox(13);
     private final ExecutorService imports = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "worldtemps-csv-import");
+        Thread thread = new Thread(r, "worldtemps-background-work");
         thread.setDaemon(true);
         return thread;
     });
     private DashboardQuery query;
     private ImportResult lastImport;
+    private Result currentResult;
+    private List<Location> selectedCities = List.of();
+    private List<TemperatureAnalysis.Series> currentSeries = List.of();
     private boolean updating;
     private boolean busy;
     private boolean closed;
@@ -209,7 +223,23 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         dateAxis.setAnimated(false);
         dateAxis.setTickLabelFormatter(new StringConverter<>() {
             @Override public String toString(Number number) {
-                return TICK_DATE.format(LocalDate.ofEpochDay(number.longValue()));
+                if ((resolution.getValue() == Resolution.YEARLY || resolution.getValue() == Resolution.MONTHLY)
+                        && Math.abs(number.doubleValue() - Math.rint(number.doubleValue())) > 0.000001) {
+                    return "";
+                }
+                if (resolution.getValue() == Resolution.YEARLY) {
+                    return Integer.toString(number.intValue());
+                }
+                if (resolution.getValue() == Resolution.MONTHLY) {
+                    long month = number.longValue();
+                    LocalDate date = LocalDate.of((int) Math.floorDiv(month, 12), (int) Math.floorMod(month, 12) + 1, 1);
+                    return DateTimeFormatter.ofPattern("MMM uuuu", Locale.US).format(date);
+                }
+                LocalDate date = LocalDate.ofEpochDay(number.longValue());
+                if (dateAxis.getUpperBound() - dateAxis.getLowerBound() > 366) {
+                    return DateTimeFormatter.ofPattern("MMM uuuu", Locale.US).format(date);
+                }
+                return TICK_DATE.format(date);
             }
             @Override public Number fromString(String text) {
                 throw new UnsupportedOperationException("Chart axis is read-only");
@@ -221,18 +251,42 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         temperatureAxis.setLabel("Temperature (°F)");
         VBox chartHeading = new VBox(4, label("Temperature over time", "section-title"), chartSubtitle);
         chartSubtitle.getStyleClass().add("muted");
-        Label rawBadge = label("RAW READINGS", "subtle-badge");
+        resolution.setId("chart-resolution");
+        resolution.getItems().setAll(Resolution.values());
+        resolution.setValue(Resolution.RAW);
+        resolution.getStyleClass().add("analysis-select");
+        resolution.setPrefWidth(170);
+        resolution.setAccessibleText("Chart aggregation");
         Region chartSpacer = new Region();
         HBox.setHgrow(chartSpacer, Priority.ALWAYS);
-        HBox chartHeader = new HBox(12, chartHeading, chartSpacer, rawBadge);
+        HBox chartHeader = new HBox(12, chartHeading, chartSpacer, resolution);
         chartHeader.setAlignment(Pos.CENTER_LEFT);
+        comparisonA.setId("comparison-a");
+        comparisonB.setId("comparison-b");
+        int comparisonNumber = 1;
+        for (ComboBox<Location> box : List.of(comparisonA, comparisonB)) {
+            box.setCellFactory(list -> comparisonCell());
+            box.setButtonCell(comparisonCell());
+            box.setPromptText("No comparison");
+            box.setAccessibleText("Comparison city " + comparisonNumber++);
+            box.getStyleClass().add("analysis-select");
+            box.setPrefWidth(220);
+            box.setMinWidth(145);
+            HBox.setHgrow(box, Priority.ALWAYS);
+        }
+        compare.setId("compare-cities");
+        compare.getStyleClass().add("secondary-button");
+        comparisonControls.getChildren().addAll(label("Compare with", "muted"), comparisonA, comparisonB, compare);
+        comparisonControls.setAlignment(Pos.CENTER_LEFT);
+        comparisonControls.setDisable(true);
         chartEmpty.setId("chart-empty");
         chartEmpty.getStyleClass().add("empty-message");
         chartEmpty.setWrapText(true);
         chart.setVisible(false);
         StackPane plot = new StackPane(chart, chartEmpty);
         chartNote.getStyleClass().add("caption");
-        VBox chartCard = new VBox(8, chartHeader, plot, chartNote);
+        chartNote.setWrapText(true);
+        VBox chartCard = new VBox(8, chartHeader, comparisonControls, plot, chartNote);
         chartCard.getStyleClass().add("surface");
 
         buildTable();
@@ -240,7 +294,11 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         HBox.setHgrow(tableSpacer, Priority.ALWAYS);
         tableCount.setId("table-count");
         tableCount.getStyleClass().add("subtle-badge");
-        HBox tableHeader = new HBox(12, label("Explore the readings", "section-title"), tableSpacer, tableCount);
+        exportCsv.setId("export-csv");
+        exportCsv.getStyleClass().add("export-button");
+        exportCsv.getItems().addAll(exportReadings, exportChart);
+        exportCsv.setDisable(true);
+        HBox tableHeader = new HBox(12, label("Explore the readings", "section-title"), tableSpacer, tableCount, exportCsv);
         tableHeader.setAlignment(Pos.CENTER_LEFT);
         VBox tableCard = new VBox(12, tableHeader, table, label("Click a column heading to sort. All temperatures are in Fahrenheit.", "caption"));
         tableCard.getStyleClass().add("surface");
@@ -308,6 +366,23 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
             }
         });
         apply.setOnAction(e -> applyFilters());
+        compare.setOnAction(e -> applyFilters());
+        city.setOnAction(e -> {
+            if (!updating) {
+                if (city.getValue() == null) {
+                    comparisonA.setValue(null);
+                    comparisonB.setValue(null);
+                }
+                comparisonControls.setDisable(busy || city.getValue() == null);
+            }
+        });
+        resolution.setOnAction(e -> {
+            if (currentResult != null && !updating) {
+                renderChart(currentResult.readings(), selectedCities);
+            }
+        });
+        exportReadings.setOnAction(e -> chooseExport(false));
+        exportChart.setOnAction(e -> chooseExport(true));
         reset.setOnAction(e -> resetFilters(false));
         demo.setOnAction(e -> loadDemo());
         importCsv.setOnAction(e -> {
@@ -327,6 +402,13 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         city.getItems().setAll(query.locations(selectedRegion(), selectedCountry()));
         city.getItems().add(0, null);
         city.setValue(previous != null && city.getItems().contains(previous) ? previous : null);
+        for (ComboBox<Location> box : List.of(comparisonA, comparisonB)) {
+            Location selected = box.getValue();
+            box.getItems().setAll(query.locations(selectedRegion(), selectedCountry()));
+            box.getItems().add(0, null);
+            box.setValue(city.getValue() != null && box.getItems().contains(selected) ? selected : null);
+        }
+        comparisonControls.setDisable(busy || city.getValue() == null);
     }
 
     private String selectedRegion() {
@@ -349,6 +431,9 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         country.getItems().add(0, ALL_COUNTRIES);
         country.setValue(ALL_COUNTRIES);
         city.setValue(null);
+        comparisonA.setValue(null);
+        comparisonB.setValue(null);
+        resolution.setValue(Resolution.RAW);
         updateLocations();
         if (selectFirstCity && city.getItems().size() > 1) {
             Location initial = city.getItems().stream().filter(Objects::nonNull)
@@ -356,6 +441,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                     .orElse(city.getItems().get(1));
             city.setValue(initial);
         }
+        comparisonControls.setDisable(busy || city.getValue() == null);
         from.setValue(query.firstDate().orElse(null));
         to.setValue(query.lastDate().orElse(null));
         from.getEditor().setText(from.getConverter().toString(from.getValue()));
@@ -372,7 +458,12 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
             from.commitValue();
             to.commitValue();
             Filter filter = new Filter(selectedRegion(), selectedCountry(), city.getValue(), from.getValue(), to.getValue());
-            Result result = query.apply(filter);
+            List<Location> comparisons = java.util.stream.Stream.of(comparisonA.getValue(), comparisonB.getValue())
+                    .filter(Objects::nonNull).distinct().toList();
+            Result result = query.apply(filter, comparisons);
+            selectedCities = java.util.stream.Stream.concat(java.util.stream.Stream.ofNullable(filter.location()),
+                    comparisons.stream()).distinct().toList();
+            currentResult = result;
             feedback.setVisible(false);
             render(result, filter.location());
         } catch (IllegalArgumentException | java.time.DateTimeException e) {
@@ -385,7 +476,8 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         table.getItems().setAll(result.readings());
         table.sort();
         tableCount.setText(String.format(Locale.US, "%,d matching readings", result.readings().size()));
-        selectionLabel.setText(location == null ? "All matching locations · Fahrenheit" : location + " · Fahrenheit");
+        selectionLabel.setText(selectedCities.size() > 1 ? selectedCities.size() + " cities compared · Shared date range · Fahrenheit"
+                : location == null ? "All matching locations · Fahrenheit" : location + " · Fahrenheit");
         var summary = result.summary();
         averageValue.setText(summary.map(s -> degrees(s.average())).orElse("—"));
         minimumValue.setText(summary.map(s -> degrees(s.minimum())).orElse("—"));
@@ -396,44 +488,141 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         maximumDetail.setText(extremeDetail(result.readings(), false));
         countDetail.setText(summary.map(s -> s.cities() + (s.cities() == 1 ? " city" : " cities") + " in this selection")
                 .orElse("No matching locations"));
-        renderChart(result.readings(), location);
+        renderChart(result.readings(), selectedCities);
     }
 
-    private void renderChart(List<Reading> readings, Location location) {
+    private void renderChart(List<Reading> readings, List<Location> locations) {
         chart.getData().clear();
-        boolean visible = location != null && !readings.isEmpty();
+        Resolution level = resolution.getValue();
+        currentSeries = locations.isEmpty() ? List.of() : TemperatureAnalysis.analyze(readings, level).stream()
+                .sorted(java.util.Comparator.comparingInt(series -> locations.indexOf(series.location()))).toList();
+        boolean visible = !currentSeries.isEmpty();
         chart.setVisible(visible);
+        chart.setLegendVisible(currentSeries.size() > 1);
         chartEmpty.setVisible(!visible);
-        chartSubtitle.setText(location == null ? "Choose a city in the filters to see its trend." : location.toString());
-        chartEmpty.setText(location == null ? "Select a city to view its trend.\nThe table and summaries show all matching locations."
+        chartSubtitle.setText(locations.isEmpty() ? "Choose a city in the filters to see its trend."
+                : locations.size() == 1 ? locations.get(0).toString() : locations.size() + " cities · " + level);
+        chartEmpty.setText(locations.isEmpty() ? "Select a city to view its trend.\nThe table and summaries show all matching locations."
                 : "No readings in this date range.\nTry widening your filters.");
-        chartNote.setText("Each point is a source reading. Lines connect observations; they do not fill missing dates.");
+        chartNote.setText(level == Resolution.RAW
+                ? "Each point is a source reading. Lines connect observations; missing dates are not filled."
+                : "Period means use only filtered source readings, including duplicates. Cards and table stay based on raw readings.");
+        refreshExportState();
         if (!visible) {
             return;
         }
-        List<Reading> plotted = readings.subList(0, Math.min(readings.size(), MAX_CHART_POINTS));
-        long start = plotted.get(0).date().toEpochDay();
-        long end = plotted.get(plotted.size() - 1).date().toEpochDay();
+        long start = currentSeries.stream().flatMap(series -> series.points().stream())
+                .mapToLong(point -> chartPosition(point.start(), level)).min().orElseThrow();
+        long end = currentSeries.stream().flatMap(series -> series.points().stream())
+                .mapToLong(point -> chartPosition(point.start(), level)).max().orElseThrow();
         dateAxis.setAutoRanging(false);
-        dateAxis.setLowerBound(start - 1);
-        dateAxis.setUpperBound(end + 1);
-        dateAxis.setTickUnit(Math.max(1, Math.ceil((end - start + 2) / 6.0)));
-        XYChart.Series<Number, Number> series = new XYChart.Series<>();
-        series.setName(location.toString());
-        for (Reading reading : plotted) {
-            XYChart.Data<Number, Number> point = new XYChart.Data<>(reading.date().toEpochDay(), reading.averageTemperatureF());
-            point.nodeProperty().addListener((observable, oldNode, node) -> {
-                if (node != null) {
-                    node.setAccessibleHelp(reading.toString());
-                    Tooltip.install(node, new Tooltip(reading.toString()));
-                }
-            });
-            series.getData().add(point);
+        double padding = level == Resolution.MONTHLY || level == Resolution.YEARLY ? (start == end ? 1 : 0) : 1;
+        dateAxis.setLowerBound(start - padding);
+        dateAxis.setUpperBound(end + padding);
+        dateAxis.setTickUnit(Math.max(1, Math.ceil((end - start) / 6.0)));
+        boolean limited = false;
+        for (TemperatureAnalysis.Series citySeries : currentSeries) {
+            var points = citySeries.points();
+            var plotted = points.subList(0, Math.min(points.size(), MAX_CHART_POINTS));
+            limited |= points.size() > MAX_CHART_POINTS;
+            XYChart.Series<Number, Number> series = new XYChart.Series<>();
+            series.setName(citySeries.location().toString());
+            for (var value : plotted) {
+                XYChart.Data<Number, Number> point = new XYChart.Data<>(chartPosition(value.start(), level), value.average());
+                String text = String.format(Locale.US, "%s%n%s to %s%nMean: %.1f °F · Min: %.1f °F · Max: %.1f °F%n%d source readings",
+                        citySeries.location(), value.start(), value.end(), value.average(), value.minimum(), value.maximum(), value.count());
+                point.nodeProperty().addListener((observable, oldNode, node) -> {
+                    if (node != null) {
+                        node.setAccessibleHelp(text);
+                        Tooltip.install(node, new Tooltip(text));
+                    }
+                });
+                series.getData().add(point);
+            }
+            chart.getData().add(series);
         }
-        chart.getData().add(series);
-        if (readings.size() > MAX_CHART_POINTS) {
-            chartNote.setText("Chart shows the first 1,000 matching readings. Narrow the date range to see later points; the table includes all matches.");
+        if (limited) {
+            chartNote.setText("Plot limited to the first 1,000 points per city. Narrow the dates for later points; exports include all matching data.");
         }
+    }
+
+    private void refreshExportState() {
+        exportReadings.setDisable(currentResult == null || currentResult.readings().isEmpty());
+        exportChart.setDisable(currentSeries.isEmpty());
+        exportCsv.setDisable(busy || currentResult == null || currentResult.readings().isEmpty());
+    }
+
+    private static long chartPosition(LocalDate date, Resolution level) {
+        return switch (level) {
+            case RAW, DAILY -> date.toEpochDay();
+            case MONTHLY -> (long) date.getYear() * 12 + date.getMonthValue() - 1;
+            case YEARLY -> date.getYear();
+        };
+    }
+
+    private void chooseExport(boolean chartData) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(chartData ? "Export chart data" : "Export filtered readings");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV files", "*.csv"));
+        chooser.setInitialFileName(chartData ? "worldtemps-" + resolution.getValue().name().toLowerCase(Locale.ROOT) + ".csv"
+                : "worldtemps-readings.csv");
+        var file = chooser.showSaveDialog(getScene().getWindow());
+        if (file != null) {
+            if (chartData) {
+                exportChartData(file.toPath());
+            } else {
+                exportReadings(file.toPath());
+            }
+        }
+    }
+
+    public CompletableFuture<Void> exportReadings(Path path) {
+        List<Reading> snapshot = List.copyOf(table.getItems());
+        if (snapshot.isEmpty()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("No readings to export."));
+        }
+        return export(path, () -> CsvExporter.writeReadings(path, snapshot));
+    }
+
+    public CompletableFuture<Void> exportChartData(Path path) {
+        List<TemperatureAnalysis.Series> snapshot = currentSeries;
+        if (snapshot.isEmpty()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Select a city with matching data before exporting the chart."));
+        }
+        return export(path, () -> CsvExporter.writeChart(path, snapshot));
+    }
+
+    private CompletableFuture<Void> export(Path path, ExportAction action) {
+        if (closed || busy) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Another operation is running or the dashboard is closed."));
+        }
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        setBusy(true);
+        feedback.setVisible(false);
+        status.setText("Exporting " + path.getFileName() + "…");
+        Task<Void> task = new Task<>() {
+            @Override protected Void call() throws IOException {
+                action.write();
+                return null;
+            }
+        };
+        task.setOnSucceeded(e -> {
+            setBusy(false);
+            status.setText("Exported " + path.getFileName() + " · Fahrenheit · Current filtered view");
+            completion.complete(null);
+        });
+        task.setOnFailed(e -> {
+            setBusy(false);
+            error("Export failed: " + Objects.toString(task.getException().getMessage(), "Choose another location."));
+            status.setText("Export failed · dashboard data retained");
+            completion.completeExceptionally(task.getException());
+        });
+        imports.submit(task);
+        return completion;
+    }
+
+    @FunctionalInterface private interface ExportAction {
+        void write() throws IOException;
     }
 
     private static String extremeDetail(List<Reading> readings, boolean minimum) {
@@ -511,6 +700,9 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         importCsv.setDisable(value);
         demo.setDisable(value);
         filterContent.setDisable(value || query == null);
+        resolution.setDisable(value);
+        comparisonControls.setDisable(value || city.getValue() == null);
+        refreshExportState();
         progress.setVisible(value);
     }
 
@@ -546,11 +738,19 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         dialog.showAndWait();
     }
 
+    private static ListCell<Location> comparisonCell() {
+        return locationCell("No comparison");
+    }
+
     private static ListCell<Location> locationCell() {
+        return locationCell("All cities");
+    }
+
+    private static ListCell<Location> locationCell(String emptyLabel) {
         return new ListCell<>() {
             @Override protected void updateItem(Location location, boolean empty) {
                 super.updateItem(location, empty);
-                setText(empty ? null : location == null ? "All cities" : location.toString());
+                setText(empty ? null : location == null ? emptyLabel : location.toString());
             }
         };
     }

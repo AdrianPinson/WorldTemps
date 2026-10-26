@@ -65,6 +65,16 @@
 .chart-horizontal-grid-lines { -fx-stroke: #eef1f4; -fx-stroke-dash-array: 4 4; }
 .chart-series-line { -fx-stroke: #e28a4f; -fx-stroke-width: 2.5px; }
 .chart-line-symbol { -fx-background-color: #e28a4f, white; -fx-background-insets: 0, 2; -fx-background-radius: 4; -fx-padding: 3px; }
+.default-color1.chart-series-line { -fx-stroke: #26968e; }
+.default-color2.chart-series-line { -fx-stroke: #657bc0; }
+.default-color1.chart-line-symbol { -fx-background-color: #26968e, white; }
+.default-color2.chart-line-symbol { -fx-background-color: #657bc0, white; }
+.chart-legend { -fx-background-color: transparent; -fx-font-size: 10px; -fx-padding: 5 0 0 0; }
+.analysis-select { -fx-background-color: #f5f7f9; -fx-border-color: #dce3e9; -fx-border-radius: 6; -fx-background-radius: 6; -fx-pref-height: 32; }
+.analysis-select .list-cell { -fx-text-fill: #4c6070; -fx-font-size: 10px; }
+.analysis-select .arrow { -fx-background-color: #7d8f9d; }
+.export-button { -fx-background-color: #fff1e5; -fx-text-fill: #975b2e; -fx-background-radius: 6; -fx-padding: 5 9; -fx-font-size: 10px; }
+.export-button .label { -fx-text-fill: #975b2e; -fx-font-weight: bold; }
 .axis { -fx-tick-label-fill: #87939e; -fx-font-size: 10px; -fx-tick-length: 0; -fx-minor-tick-length: 0; -fx-border-color: transparent; }
 .axis-label { -fx-text-fill: #87939e; -fx-font-size: 10px; }
 .axis-tick-mark, .axis-minor-tick-mark { -fx-stroke: transparent; }

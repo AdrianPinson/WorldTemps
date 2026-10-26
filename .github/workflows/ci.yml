@@ -26,4 +26,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dashboard-preview
-          path: target/ui/dashboard.png
+          path: target/ui/*.png
