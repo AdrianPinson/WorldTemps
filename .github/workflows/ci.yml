@@ -1,0 +1,20 @@
+name: Java build and tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build and test
+        run: mvn --batch-mode --no-transfer-progress clean verify
+      - name: Smoke test bundled sample
+        run: printf '1\n2\n0\n' | java -jar target/worldtemps.jar
