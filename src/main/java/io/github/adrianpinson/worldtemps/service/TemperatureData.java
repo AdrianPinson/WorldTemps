@@ -24,6 +24,10 @@ public final class TemperatureData {
         return readings.size();
     }
 
+    public List<Reading> readings() {
+        return stream().toList();
+    }
+
     public Optional<Reading> minimum() {
         return stream().min(BY_TEMPERATURE);
     }

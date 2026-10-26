@@ -1,0 +1,615 @@
+package io.github.adrianpinson.worldtemps.ui;
+
+import io.github.adrianpinson.worldtemps.importer.CsvTemperatureLoader;
+import io.github.adrianpinson.worldtemps.importer.CsvTemperatureLoader.ImportResult;
+import io.github.adrianpinson.worldtemps.model.Reading;
+import io.github.adrianpinson.worldtemps.service.DashboardQuery;
+import io.github.adrianpinson.worldtemps.service.DashboardQuery.Filter;
+import io.github.adrianpinson.worldtemps.service.DashboardQuery.Location;
+import io.github.adrianpinson.worldtemps.service.DashboardQuery.Result;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Function;
+import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.concurrent.Task;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.chart.LineChart;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.XYChart;
+import javafx.scene.control.*;
+import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.Line;
+import javafx.stage.FileChooser;
+import javafx.util.StringConverter;
+
+/** Desktop presentation layer. Filtering and summary calculations live in DashboardQuery. */
+public final class DashboardView extends BorderPane implements AutoCloseable {
+    private static final String ALL_REGIONS = "All regions";
+    private static final String ALL_COUNTRIES = "All countries";
+    private static final DateTimeFormatter SHORT_DATE = DateTimeFormatter.ofPattern("MMM d, uuuu", Locale.US);
+    private static final DateTimeFormatter TICK_DATE = DateTimeFormatter.ofPattern("MMM d", Locale.US);
+    private static final int MAX_CHART_POINTS = 1000;
+
+    private final ComboBox<String> region = new ComboBox<>();
+    private final ComboBox<String> country = new ComboBox<>();
+    private final ComboBox<Location> city = new ComboBox<>();
+    private final DatePicker from = new DatePicker();
+    private final DatePicker to = new DatePicker();
+    private final Button apply = new Button("Apply filters");
+    private final Button reset = new Button("Reset filters");
+    private final Button importCsv = new Button("↑  Import CSV");
+    private final Button demo = new Button("Load demo");
+    private final Button details = new Button("Import details");
+    private final Label feedback = new Label();
+    private final Label source = new Label("No dataset loaded");
+    private final Label sourceHint = new Label("Import a CSV or explore the sample.");
+    private final Label sourceBadge = new Label("NO DATA");
+    private final Label status = new Label("Ready to explore");
+    private final Label selectionLabel = new Label("Choose a location to get started");
+    private final Label chartSubtitle = new Label("Select a city to view its temperature history.");
+    private final Label chartNote = new Label("Each point is a source reading. No aggregation is applied.");
+    private final Label tableCount = new Label("0 readings");
+    private final Label averageValue = new Label("—");
+    private final Label minimumValue = new Label("—");
+    private final Label maximumValue = new Label("—");
+    private final Label countValue = new Label("0");
+    private final Label averageDetail = new Label("No matching data");
+    private final Label minimumDetail = new Label("No matching data");
+    private final Label maximumDetail = new Label("No matching data");
+    private final Label countDetail = new Label("No locations selected");
+    private final ProgressIndicator progress = new ProgressIndicator();
+    private final NumberAxis dateAxis = new NumberAxis();
+    private final LineChart<Number, Number> chart = new LineChart<>(dateAxis, new NumberAxis());
+    private final TableView<Reading> table = new TableView<>();
+    private final Label chartEmpty = new Label("Select a city to view its trend.");
+    private final VBox filterContent = new VBox(13);
+    private final ExecutorService imports = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "worldtemps-csv-import");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private DashboardQuery query;
+    private ImportResult lastImport;
+    private boolean updating;
+    private boolean busy;
+    private boolean closed;
+
+    public DashboardView() {
+        getStyleClass().add("dashboard");
+        setLeft(sidebar());
+        setCenter(workspace());
+        wireControls();
+    }
+
+    private VBox sidebar() {
+        VBox sidebar = new VBox(20);
+        sidebar.getStyleClass().add("sidebar");
+        sidebar.setPrefWidth(236);
+        sidebar.setMinWidth(236);
+        sidebar.setMaxWidth(236);
+        HBox brand = new HBox(10, globe(), label("WorldTemps", "brand"));
+        brand.setAlignment(Pos.CENTER_LEFT);
+        VBox brandBlock = new VBox(8, brand, label("A WORLD OF TEMPERATURE DATA", "brand-caption"));
+        Label active = label("↗   Temperature explorer", "nav-active");
+        active.setMaxWidth(Double.MAX_VALUE);
+        region.setId("region-filter");
+        country.setId("country-filter");
+        city.setId("city-filter");
+        city.setPromptText("All cities");
+        from.setId("from-date");
+        to.setId("to-date");
+        for (ComboBox<?> box : List.of(region, country, city)) {
+            box.setMaxWidth(Double.MAX_VALUE);
+        }
+        city.setCellFactory(list -> locationCell());
+        city.setButtonCell(locationCell());
+        for (DatePicker picker : List.of(from, to)) {
+            picker.setMaxWidth(Double.MAX_VALUE);
+            picker.setConverter(new StringConverter<>() {
+                @Override public String toString(LocalDate date) {
+                    return date == null ? "" : SHORT_DATE.format(date);
+                }
+                @Override public LocalDate fromString(String text) {
+                    return text == null || text.isBlank() ? null : LocalDate.parse(text.trim(), SHORT_DATE);
+                }
+            });
+            picker.setPromptText("Any date");
+        }
+        apply.setId("apply-filters");
+        apply.getStyleClass().add("accent-button");
+        reset.setId("reset-filters");
+        reset.getStyleClass().add("sidebar-link");
+        apply.setMaxWidth(Double.MAX_VALUE);
+        reset.setMaxWidth(Double.MAX_VALUE);
+        feedback.setId("filter-feedback");
+        feedback.setWrapText(true);
+        feedback.getStyleClass().add("feedback");
+        feedback.setVisible(false);
+        feedback.managedProperty().bind(feedback.visibleProperty());
+        filterContent.getChildren().addAll(label("REFINE YOUR VIEW", "eyebrow-light"),
+                field("Region", region), field("Country", country), field("City", city),
+                field("From", from), field("To", to), apply, reset, feedback);
+        ScrollPane filterScroll = new ScrollPane(filterContent);
+        filterScroll.getStyleClass().add("filter-scroll");
+        filterScroll.setFitToWidth(true);
+        filterScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        VBox.setVgrow(filterScroll, Priority.ALWAYS);
+        source.getStyleClass().add("source-title");
+        source.setWrapText(true);
+        sourceHint.getStyleClass().add("source-hint");
+        sourceHint.setWrapText(true);
+        details.getStyleClass().add("sidebar-link");
+        details.setDisable(true);
+        details.setMaxWidth(Double.MAX_VALUE);
+        VBox sourcePanel = new VBox(8, label("DATA SOURCE", "eyebrow-light"), source, sourceHint, details);
+        sourcePanel.getStyleClass().add("source-panel");
+        sidebar.getChildren().addAll(brandBlock, active, filterScroll, sourcePanel);
+        filterContent.setDisable(true);
+        return sidebar;
+    }
+
+    private ScrollPane workspace() {
+        VBox main = new VBox(20);
+        main.setPadding(new Insets(26, 30, 20, 30));
+        main.getStyleClass().add("workspace");
+        VBox titles = new VBox(6, label("WORKSPACE  /  EXPLORER", "eyebrow"),
+                label("Temperature explorer", "page-title"), selectionLabel);
+        selectionLabel.getStyleClass().add("muted");
+        Region headerSpacer = new Region();
+        HBox.setHgrow(headerSpacer, Priority.ALWAYS);
+        sourceBadge.getStyleClass().add("source-badge");
+        demo.getStyleClass().add("secondary-button");
+        demo.setId("load-demo");
+        importCsv.getStyleClass().add("primary-button");
+        importCsv.setId("import-csv");
+        progress.setPrefSize(20, 20);
+        progress.setMaxSize(20, 20);
+        progress.setVisible(false);
+        progress.managedProperty().bind(progress.visibleProperty());
+        HBox actions = new HBox(10, progress, sourceBadge, demo, importCsv);
+        actions.setAlignment(Pos.CENTER_RIGHT);
+        HBox header = new HBox(16, titles, headerSpacer, actions);
+        header.setAlignment(Pos.CENTER_LEFT);
+
+        averageValue.setId("average-value");
+        minimumValue.setId("minimum-value");
+        maximumValue.setId("maximum-value");
+        countValue.setId("count-value");
+        HBox cards = new HBox(14,
+                metric("AVERAGE TEMPERATURE", averageValue, averageDetail, true),
+                metric("LOWEST READING", minimumValue, minimumDetail, false),
+                metric("HIGHEST READING", maximumValue, maximumDetail, false),
+                metric("VALID READINGS", countValue, countDetail, false));
+        chart.setId("temperature-chart");
+        chart.setLegendVisible(false);
+        chart.setAnimated(false);
+        chart.setCreateSymbols(true);
+        chart.setHorizontalZeroLineVisible(false);
+        chart.setVerticalZeroLineVisible(false);
+        chart.setVerticalGridLinesVisible(false);
+        chart.setMinHeight(210);
+        chart.setPrefHeight(225);
+        dateAxis.setForceZeroInRange(false);
+        dateAxis.setAnimated(false);
+        dateAxis.setTickLabelFormatter(new StringConverter<>() {
+            @Override public String toString(Number number) {
+                return TICK_DATE.format(LocalDate.ofEpochDay(number.longValue()));
+            }
+            @Override public Number fromString(String text) {
+                throw new UnsupportedOperationException("Chart axis is read-only");
+            }
+        });
+        NumberAxis temperatureAxis = (NumberAxis) chart.getYAxis();
+        temperatureAxis.setForceZeroInRange(false);
+        temperatureAxis.setAnimated(false);
+        temperatureAxis.setLabel("Temperature (°F)");
+        VBox chartHeading = new VBox(4, label("Temperature over time", "section-title"), chartSubtitle);
+        chartSubtitle.getStyleClass().add("muted");
+        Label rawBadge = label("RAW READINGS", "subtle-badge");
+        Region chartSpacer = new Region();
+        HBox.setHgrow(chartSpacer, Priority.ALWAYS);
+        HBox chartHeader = new HBox(12, chartHeading, chartSpacer, rawBadge);
+        chartHeader.setAlignment(Pos.CENTER_LEFT);
+        chartEmpty.setId("chart-empty");
+        chartEmpty.getStyleClass().add("empty-message");
+        chartEmpty.setWrapText(true);
+        chart.setVisible(false);
+        StackPane plot = new StackPane(chart, chartEmpty);
+        chartNote.getStyleClass().add("caption");
+        VBox chartCard = new VBox(8, chartHeader, plot, chartNote);
+        chartCard.getStyleClass().add("surface");
+
+        buildTable();
+        Region tableSpacer = new Region();
+        HBox.setHgrow(tableSpacer, Priority.ALWAYS);
+        tableCount.setId("table-count");
+        tableCount.getStyleClass().add("subtle-badge");
+        HBox tableHeader = new HBox(12, label("Explore the readings", "section-title"), tableSpacer, tableCount);
+        tableHeader.setAlignment(Pos.CENTER_LEFT);
+        VBox tableCard = new VBox(12, tableHeader, table, label("Click a column heading to sort. All temperatures are in Fahrenheit.", "caption"));
+        tableCard.getStyleClass().add("surface");
+        status.setId("status-label");
+        status.getStyleClass().add("caption");
+        main.getChildren().addAll(header, cards, chartCard, tableCard, status);
+        ScrollPane scroll = new ScrollPane(main);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.getStyleClass().add("main-scroll");
+        return scroll;
+    }
+
+    private void buildTable() {
+        table.setId("readings-table");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setFixedCellSize(35);
+        table.setPrefHeight(210);
+        table.setMinHeight(175);
+        table.setPlaceholder(label("No readings match these filters. Try a wider date range.", "empty-message"));
+        TableColumn<Reading, LocalDate> date = column("Date", Reading::date, 120);
+        table.getColumns().add(date);
+        table.getColumns().add(column("City", Reading::city, 150));
+        table.getColumns().add(column("State", r -> r.state().isBlank() ? "—" : r.state(), 110));
+        table.getColumns().add(column("Country", Reading::country, 110));
+        table.getColumns().add(column("Region", Reading::region, 160));
+        TableColumn<Reading, Double> temperature = column("Temperature", Reading::averageTemperatureF, 140);
+        temperature.setCellFactory(c -> new TableCell<>() {
+            @Override protected void updateItem(Double value, boolean empty) {
+                super.updateItem(value, empty);
+                setText(empty || value == null ? null : String.format(Locale.US, "%.1f °F", value));
+                getStyleClass().remove("temperature-cell");
+                getStyleClass().add("temperature-cell");
+            }
+        });
+        table.getColumns().add(temperature);
+        table.getSortOrder().add(date);
+    }
+
+    private static <T> TableColumn<Reading, T> column(String title, Function<Reading, T> value, double width) {
+        TableColumn<Reading, T> column = new TableColumn<>(title);
+        column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(value.apply(cell.getValue())));
+        column.setPrefWidth(width);
+        column.setMinWidth(75);
+        return column;
+    }
+
+    private void wireControls() {
+        region.setOnAction(e -> {
+            if (!updating && query != null) {
+                updating = true;
+                String previous = selectedCountry();
+                country.getItems().setAll(query.countries(selectedRegion()));
+                country.getItems().add(0, ALL_COUNTRIES);
+                country.setValue(previous != null && country.getItems().contains(previous) ? previous : ALL_COUNTRIES);
+                updateLocations();
+                updating = false;
+            }
+        });
+        country.setOnAction(e -> {
+            if (!updating && query != null) {
+                updating = true;
+                updateLocations();
+                updating = false;
+            }
+        });
+        apply.setOnAction(e -> applyFilters());
+        reset.setOnAction(e -> resetFilters(false));
+        demo.setOnAction(e -> loadDemo());
+        importCsv.setOnAction(e -> {
+            FileChooser picker = new FileChooser();
+            picker.setTitle("Import temperature data");
+            picker.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV files", "*.csv", "*.CSV"));
+            var file = picker.showOpenDialog(getScene().getWindow());
+            if (file != null) {
+                importFile(file.toPath());
+            }
+        });
+        details.setOnAction(e -> showImportDetails());
+    }
+
+    private void updateLocations() {
+        Location previous = city.getValue();
+        city.getItems().setAll(query.locations(selectedRegion(), selectedCountry()));
+        city.getItems().add(0, null);
+        city.setValue(previous != null && city.getItems().contains(previous) ? previous : null);
+    }
+
+    private String selectedRegion() {
+        return ALL_REGIONS.equals(region.getValue()) ? null : region.getValue();
+    }
+
+    private String selectedCountry() {
+        return ALL_COUNTRIES.equals(country.getValue()) ? null : country.getValue();
+    }
+
+    private void resetFilters(boolean selectFirstCity) {
+        if (query == null) {
+            return;
+        }
+        updating = true;
+        region.getItems().setAll(query.regions());
+        region.getItems().add(0, ALL_REGIONS);
+        region.setValue(ALL_REGIONS);
+        country.getItems().setAll(query.countries(null));
+        country.getItems().add(0, ALL_COUNTRIES);
+        country.setValue(ALL_COUNTRIES);
+        city.setValue(null);
+        updateLocations();
+        if (selectFirstCity && city.getItems().size() > 1) {
+            Location initial = city.getItems().stream().filter(Objects::nonNull)
+                    .filter(location -> location.city().equals("Longview")).findFirst()
+                    .orElse(city.getItems().get(1));
+            city.setValue(initial);
+        }
+        from.setValue(query.firstDate().orElse(null));
+        to.setValue(query.lastDate().orElse(null));
+        from.getEditor().setText(from.getConverter().toString(from.getValue()));
+        to.getEditor().setText(to.getConverter().toString(to.getValue()));
+        updating = false;
+        applyFilters();
+    }
+
+    private void applyFilters() {
+        if (query == null) {
+            return;
+        }
+        try {
+            from.commitValue();
+            to.commitValue();
+            Filter filter = new Filter(selectedRegion(), selectedCountry(), city.getValue(), from.getValue(), to.getValue());
+            Result result = query.apply(filter);
+            feedback.setVisible(false);
+            render(result, filter.location());
+        } catch (IllegalArgumentException | java.time.DateTimeException e) {
+            error(e instanceof java.time.DateTimeException
+                    ? "Enter a valid date, such as Jan 1, 2025." : e.getMessage());
+        }
+    }
+
+    private void render(Result result, Location location) {
+        table.getItems().setAll(result.readings());
+        table.sort();
+        tableCount.setText(String.format(Locale.US, "%,d matching readings", result.readings().size()));
+        selectionLabel.setText(location == null ? "All matching locations · Fahrenheit" : location + " · Fahrenheit");
+        var summary = result.summary();
+        averageValue.setText(summary.map(s -> degrees(s.average())).orElse("—"));
+        minimumValue.setText(summary.map(s -> degrees(s.minimum())).orElse("—"));
+        maximumValue.setText(summary.map(s -> degrees(s.maximum())).orElse("—"));
+        countValue.setText(String.format(Locale.US, "%,d", result.readings().size()));
+        averageDetail.setText(summary.isPresent() ? "Mean of matching readings" : "No matching data");
+        minimumDetail.setText(extremeDetail(result.readings(), true));
+        maximumDetail.setText(extremeDetail(result.readings(), false));
+        countDetail.setText(summary.map(s -> s.cities() + (s.cities() == 1 ? " city" : " cities") + " in this selection")
+                .orElse("No matching locations"));
+        renderChart(result.readings(), location);
+    }
+
+    private void renderChart(List<Reading> readings, Location location) {
+        chart.getData().clear();
+        boolean visible = location != null && !readings.isEmpty();
+        chart.setVisible(visible);
+        chartEmpty.setVisible(!visible);
+        chartSubtitle.setText(location == null ? "Choose a city in the filters to see its trend." : location.toString());
+        chartEmpty.setText(location == null ? "Select a city to view its trend.\nThe table and summaries show all matching locations."
+                : "No readings in this date range.\nTry widening your filters.");
+        chartNote.setText("Each point is a source reading. Lines connect observations; they do not fill missing dates.");
+        if (!visible) {
+            return;
+        }
+        List<Reading> plotted = readings.subList(0, Math.min(readings.size(), MAX_CHART_POINTS));
+        long start = plotted.get(0).date().toEpochDay();
+        long end = plotted.get(plotted.size() - 1).date().toEpochDay();
+        dateAxis.setAutoRanging(false);
+        dateAxis.setLowerBound(start - 1);
+        dateAxis.setUpperBound(end + 1);
+        dateAxis.setTickUnit(Math.max(1, Math.ceil((end - start + 2) / 6.0)));
+        XYChart.Series<Number, Number> series = new XYChart.Series<>();
+        series.setName(location.toString());
+        for (Reading reading : plotted) {
+            XYChart.Data<Number, Number> point = new XYChart.Data<>(reading.date().toEpochDay(), reading.averageTemperatureF());
+            point.nodeProperty().addListener((observable, oldNode, node) -> {
+                if (node != null) {
+                    node.setAccessibleHelp(reading.toString());
+                    Tooltip.install(node, new Tooltip(reading.toString()));
+                }
+            });
+            series.getData().add(point);
+        }
+        chart.getData().add(series);
+        if (readings.size() > MAX_CHART_POINTS) {
+            chartNote.setText("Chart shows the first 1,000 matching readings. Narrow the date range to see later points; the table includes all matches.");
+        }
+    }
+
+    private static String extremeDetail(List<Reading> readings, boolean minimum) {
+        var comparator = java.util.Comparator.comparingDouble(Reading::averageTemperatureF);
+        return (minimum ? readings.stream().min(comparator) : readings.stream().max(comparator))
+                .map(r -> TICK_DATE.format(r.date()) + " · " + r.city()).orElse("No matching data");
+    }
+
+    public CompletableFuture<Void> loadDemo() {
+        return load(() -> new InputStreamReader(Objects.requireNonNull(
+                getClass().getResourceAsStream("/data/sample-temperatures.csv")), StandardCharsets.UTF_8),
+                "WorldTemps sample", true);
+    }
+
+    public CompletableFuture<Void> importFile(Path path) {
+        return load(() -> Files.newBufferedReader(path, StandardCharsets.UTF_8), path.getFileName().toString(), false);
+    }
+
+    private CompletableFuture<Void> load(ReaderSource reader, String name, boolean synthetic) {
+        if (closed || busy) {
+            return CompletableFuture.failedFuture(new IllegalStateException("An import is already running or the dashboard is closed."));
+        }
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        setBusy(true);
+        feedback.setVisible(false);
+        status.setText("Loading " + name + "…");
+        Task<ImportResult> task = new Task<>() {
+            @Override protected ImportResult call() throws IOException {
+                try (Reader input = reader.open()) {
+                    ImportResult result = new CsvTemperatureLoader().load(input);
+                    if (result.data().size() == 0) {
+                        throw new IOException("No valid readings were found. Check the CSV values and try again.");
+                    }
+                    return result;
+                }
+            }
+        };
+        task.setOnSucceeded(e -> {
+            setBusy(false);
+            if (closed) {
+                completion.cancel(false);
+                return;
+            }
+            lastImport = task.getValue();
+            query = new DashboardQuery(lastImport.data());
+            filterContent.setDisable(false);
+            source.setText(name);
+            sourceHint.setText(synthetic ? "Synthetic demo · not historical observations."
+                    : String.format(Locale.US, "%,d valid · %,d rejected records", lastImport.data().size(), lastImport.rejectedRows()));
+            sourceBadge.setText(synthetic ? "DEMO DATA" : "CSV DATA");
+            sourceBadge.getStyleClass().remove("imported-badge");
+            if (!synthetic) {
+                sourceBadge.getStyleClass().add("imported-badge");
+            }
+            status.setText(String.format(Locale.US, "Loaded %,d readings · %,d rejected · Fahrenheit%s",
+                    lastImport.data().size(), lastImport.rejectedRows(), synthetic ? " · Synthetic demonstration data" : ""));
+            details.setDisable(false);
+            resetFilters(true);
+            completion.complete(null);
+        });
+        task.setOnFailed(e -> {
+            setBusy(false);
+            if (!closed) {
+                error("Import failed: " + Objects.toString(task.getException().getMessage(), "Check the CSV format."));
+                status.setText(query == null ? "No dataset loaded" : "Import failed · previous dataset retained");
+            }
+            completion.completeExceptionally(task.getException());
+        });
+        imports.submit(task);
+        return completion;
+    }
+
+    private void setBusy(boolean value) {
+        busy = value;
+        importCsv.setDisable(value);
+        demo.setDisable(value);
+        filterContent.setDisable(value || query == null);
+        progress.setVisible(value);
+    }
+
+    private void error(String message) {
+        feedback.setText(message);
+        feedback.setVisible(true);
+    }
+
+    private void showImportDetails() {
+        if (lastImport == null) {
+            return;
+        }
+        StringBuilder text = new StringBuilder(String.format(Locale.US, "Accepted: %,d%nRejected: %,d%n%n",
+                lastImport.data().size(), lastImport.rejectedRows()));
+        lastImport.issues().forEach(issue -> text.append("Record ").append(issue.recordNumber()).append(": ")
+                .append(issue.reason()).append('\n'));
+        if (lastImport.rejectedRows() > lastImport.issues().size()) {
+            text.append("\nOnly the first 20 rejected-record diagnostics are shown.");
+        }
+        if (lastImport.rejectedRows() == 0) {
+            text.append("All records passed import validation.");
+        }
+        TextArea content = new TextArea(text.toString());
+        content.setEditable(false);
+        content.setWrapText(true);
+        content.setPrefSize(520, 280);
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.initOwner(getScene().getWindow());
+        dialog.setTitle("Import details");
+        dialog.setHeaderText(source.getText());
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.showAndWait();
+    }
+
+    private static ListCell<Location> locationCell() {
+        return new ListCell<>() {
+            @Override protected void updateItem(Location location, boolean empty) {
+                super.updateItem(location, empty);
+                setText(empty ? null : location == null ? "All cities" : location.toString());
+            }
+        };
+    }
+
+    private static VBox field(String name, Control control) {
+        Label caption = label(name, "filter-label");
+        caption.setLabelFor(control);
+        return new VBox(6, caption, control);
+    }
+
+    private static VBox metric(String title, Label value, Label description, boolean highlighted) {
+        value.getStyleClass().add("metric-value");
+        description.getStyleClass().add("metric-detail");
+        value.setMinWidth(0);
+        description.setMinWidth(0);
+        VBox card = new VBox(9, label(title, "metric-title"), value, description);
+        card.getStyleClass().add("metric-card");
+        if (highlighted) {
+            card.getStyleClass().add("metric-highlight");
+        }
+        card.setMinWidth(0);
+        card.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(card, Priority.ALWAYS);
+        card.setPrefWidth(220);
+        return card;
+    }
+
+    private static Label label(String text, String style) {
+        Label label = new Label(text);
+        label.getStyleClass().add(style);
+        return label;
+    }
+
+    private static String degrees(double value) {
+        return String.format(Locale.US, "%.1f°", value);
+    }
+
+    private static Pane globe() {
+        Circle disc = new Circle(18, 18, 18, Color.web("#f6a45d"));
+        Circle outline = new Circle(18, 18, 10, Color.TRANSPARENT);
+        outline.setStroke(Color.web("#172b3b"));
+        outline.setStrokeWidth(1.4);
+        Line horizontal = new Line(8, 18, 28, 18);
+        horizontal.setStroke(Color.web("#172b3b"));
+        javafx.scene.shape.Ellipse meridian = new javafx.scene.shape.Ellipse(18, 18, 4, 10);
+        meridian.setFill(Color.TRANSPARENT);
+        meridian.setStroke(Color.web("#172b3b"));
+        Pane icon = new Pane(disc, outline, horizontal, meridian);
+        icon.setMinSize(36, 36);
+        icon.setMaxSize(36, 36);
+        return icon;
+    }
+
+    @Override public void close() {
+        closed = true;
+        imports.shutdownNow();
+    }
+
+    @FunctionalInterface private interface ReaderSource {
+        Reader open() throws IOException;
+    }
+}

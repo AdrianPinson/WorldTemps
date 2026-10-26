@@ -1,19 +1,271 @@
 Region,Country,State,City,Month,Day,Year,AvgTemperature
-North America,US,Texas,Longview,1,1,2025,45.0
-North America,US,Texas,Longview,1,2,2025,48.5
-North America,US,Texas,Longview,1,3,2025,42.0
-North America,US,Texas,Longview,7,1,2025,86.0
-North America,US,Texas,Longview,7,2,2025,89.0
-North America,US,Texas,Longview,7,3,2025,87.5
-Europe,UK,,London,1,1,2025,38.0
-Europe,UK,,London,1,2,2025,40.0
-Europe,UK,,London,1,3,2025,37.0
-Europe,UK,,London,7,1,2025,67.0
-Europe,UK,,London,7,2,2025,70.0
-Europe,UK,,London,7,3,2025,68.5
-Asia,Japan,,Tokyo,1,1,2025,41.0
-Asia,Japan,,Tokyo,1,2,2025,43.0
-Asia,Japan,,Tokyo,1,3,2025,39.0
-Asia,Japan,,Tokyo,7,1,2025,80.0
-Asia,Japan,,Tokyo,7,2,2025,83.0
-Asia,Japan,,Tokyo,7,3,2025,82.0
+North America,US,Texas,Longview,1,1,2025,50.0
+North America,US,Texas,Longview,1,2,2025,52.3
+North America,US,Texas,Longview,1,3,2025,54.2
+North America,US,Texas,Longview,1,4,2025,55.5
+North America,US,Texas,Longview,1,5,2025,56.2
+North America,US,Texas,Longview,1,6,2025,56.0
+North America,US,Texas,Longview,1,7,2025,55.0
+North America,US,Texas,Longview,1,8,2025,53.5
+North America,US,Texas,Longview,1,9,2025,51.7
+North America,US,Texas,Longview,1,10,2025,49.9
+North America,US,Texas,Longview,1,11,2025,48.3
+North America,US,Texas,Longview,1,12,2025,47.2
+North America,US,Texas,Longview,1,13,2025,46.9
+North America,US,Texas,Longview,1,14,2025,47.3
+North America,US,Texas,Longview,1,15,2025,48.5
+North America,US,Texas,Longview,1,16,2025,50.2
+North America,US,Texas,Longview,1,17,2025,52.4
+North America,US,Texas,Longview,1,18,2025,54.6
+North America,US,Texas,Longview,1,19,2025,56.6
+North America,US,Texas,Longview,1,20,2025,58.1
+North America,US,Texas,Longview,1,21,2025,59.1
+North America,US,Texas,Longview,1,22,2025,59.3
+North America,US,Texas,Longview,1,23,2025,58.9
+North America,US,Texas,Longview,1,24,2025,58.0
+North America,US,Texas,Longview,1,25,2025,56.7
+North America,US,Texas,Longview,1,26,2025,55.5
+North America,US,Texas,Longview,1,27,2025,54.5
+North America,US,Texas,Longview,1,28,2025,54.1
+North America,US,Texas,Longview,1,29,2025,54.3
+North America,US,Texas,Longview,1,30,2025,55.3
+North America,US,Texas,Longview,1,31,2025,56.9
+North America,US,Texas,Longview,2,1,2025,59.2
+North America,US,Texas,Longview,2,2,2025,61.7
+North America,US,Texas,Longview,2,3,2025,64.3
+North America,US,Texas,Longview,2,4,2025,66.5
+North America,US,Texas,Longview,2,5,2025,68.3
+North America,US,Texas,Longview,2,6,2025,69.3
+North America,US,Texas,Longview,2,7,2025,69.6
+North America,US,Texas,Longview,2,8,2025,69.0
+North America,US,Texas,Longview,2,9,2025,67.9
+North America,US,Texas,Longview,2,10,2025,66.3
+North America,US,Texas,Longview,2,11,2025,64.6
+North America,US,Texas,Longview,2,12,2025,63.0
+North America,US,Texas,Longview,2,13,2025,61.9
+North America,US,Texas,Longview,2,14,2025,61.4
+North America,US,Texas,Longview,2,15,2025,61.6
+North America,US,Texas,Longview,2,16,2025,62.5
+North America,US,Texas,Longview,2,17,2025,64.0
+North America,US,Texas,Longview,2,18,2025,66.0
+North America,US,Texas,Longview,2,19,2025,68.0
+North America,US,Texas,Longview,2,20,2025,69.8
+North America,US,Texas,Longview,2,21,2025,71.3
+North America,US,Texas,Longview,2,22,2025,72.1
+North America,US,Texas,Longview,2,23,2025,72.2
+North America,US,Texas,Longview,2,24,2025,71.7
+North America,US,Texas,Longview,2,25,2025,70.6
+North America,US,Texas,Longview,2,26,2025,69.2
+North America,US,Texas,Longview,2,27,2025,67.7
+North America,US,Texas,Longview,2,28,2025,66.4
+North America,US,Texas,Longview,3,1,2025,65.7
+North America,US,Texas,Longview,3,2,2025,65.6
+North America,US,Texas,Longview,3,3,2025,66.4
+North America,US,Texas,Longview,3,4,2025,67.8
+North America,US,Texas,Longview,3,5,2025,70.0
+North America,US,Texas,Longview,3,6,2025,72.5
+North America,US,Texas,Longview,3,7,2025,75.2
+North America,US,Texas,Longview,3,8,2025,77.7
+North America,US,Texas,Longview,3,9,2025,79.8
+North America,US,Texas,Longview,3,10,2025,81.2
+North America,US,Texas,Longview,3,11,2025,81.8
+North America,US,Texas,Longview,3,12,2025,81.7
+North America,US,Texas,Longview,3,13,2025,80.9
+North America,US,Texas,Longview,3,14,2025,79.7
+North America,US,Texas,Longview,3,15,2025,78.2
+North America,US,Texas,Longview,3,16,2025,76.8
+North America,US,Texas,Longview,3,17,2025,75.8
+North America,US,Texas,Longview,3,18,2025,75.4
+North America,US,Texas,Longview,3,19,2025,75.6
+North America,US,Texas,Longview,3,20,2025,76.5
+North America,US,Texas,Longview,3,21,2025,78.1
+North America,US,Texas,Longview,3,22,2025,80.0
+North America,US,Texas,Longview,3,23,2025,82.0
+North America,US,Texas,Longview,3,24,2025,83.9
+North America,US,Texas,Longview,3,25,2025,85.3
+North America,US,Texas,Longview,3,26,2025,86.2
+North America,US,Texas,Longview,3,27,2025,86.3
+North America,US,Texas,Longview,3,28,2025,85.7
+North America,US,Texas,Longview,3,29,2025,84.5
+North America,US,Texas,Longview,3,30,2025,82.9
+North America,US,Texas,Longview,3,31,2025,89.0
+Europe,UK,,London,1,1,2025,37.0
+Europe,UK,,London,1,2,2025,43.3
+Europe,UK,,London,1,3,2025,44.4
+Europe,UK,,London,1,4,2025,45.2
+Europe,UK,,London,1,5,2025,45.4
+Europe,UK,,London,1,6,2025,45.2
+Europe,UK,,London,1,7,2025,44.5
+Europe,UK,,London,1,8,2025,43.5
+Europe,UK,,London,1,9,2025,42.2
+Europe,UK,,London,1,10,2025,41.0
+Europe,UK,,London,1,11,2025,39.9
+Europe,UK,,London,1,12,2025,39.1
+Europe,UK,,London,1,13,2025,38.7
+Europe,UK,,London,1,14,2025,38.9
+Europe,UK,,London,1,15,2025,39.4
+Europe,UK,,London,1,16,2025,40.4
+Europe,UK,,London,1,17,2025,41.6
+Europe,UK,,London,1,18,2025,42.8
+Europe,UK,,London,1,19,2025,44.0
+Europe,UK,,London,1,20,2025,44.9
+Europe,UK,,London,1,21,2025,45.5
+Europe,UK,,London,1,22,2025,45.6
+Europe,UK,,London,1,23,2025,45.4
+Europe,UK,,London,1,24,2025,44.9
+Europe,UK,,London,1,25,2025,44.3
+Europe,UK,,London,1,26,2025,43.6
+Europe,UK,,London,1,27,2025,43.2
+Europe,UK,,London,1,28,2025,43.0
+Europe,UK,,London,1,29,2025,43.3
+Europe,UK,,London,1,30,2025,44.0
+Europe,UK,,London,1,31,2025,45.1
+Europe,UK,,London,2,1,2025,46.5
+Europe,UK,,London,2,2,2025,48.1
+Europe,UK,,London,2,3,2025,49.7
+Europe,UK,,London,2,4,2025,51.2
+Europe,UK,,London,2,5,2025,52.2
+Europe,UK,,London,2,6,2025,52.9
+Europe,UK,,London,2,7,2025,53.0
+Europe,UK,,London,2,8,2025,52.7
+Europe,UK,,London,2,9,2025,51.9
+Europe,UK,,London,2,10,2025,50.9
+Europe,UK,,London,2,11,2025,49.7
+Europe,UK,,London,2,12,2025,48.7
+Europe,UK,,London,2,13,2025,47.9
+Europe,UK,,London,2,14,2025,47.4
+Europe,UK,,London,2,15,2025,47.4
+Europe,UK,,London,2,16,2025,47.8
+Europe,UK,,London,2,17,2025,48.6
+Europe,UK,,London,2,18,2025,49.6
+Europe,UK,,London,2,19,2025,50.6
+Europe,UK,,London,2,20,2025,51.6
+Europe,UK,,London,2,21,2025,52.4
+Europe,UK,,London,2,22,2025,52.7
+Europe,UK,,London,2,23,2025,52.7
+Europe,UK,,London,2,24,2025,52.3
+Europe,UK,,London,2,25,2025,51.7
+Europe,UK,,London,2,26,2025,50.8
+Europe,UK,,London,2,27,2025,49.9
+Europe,UK,,London,2,28,2025,49.2
+Europe,UK,,London,3,1,2025,48.8
+Europe,UK,,London,3,2,2025,48.8
+Europe,UK,,London,3,3,2025,49.3
+Europe,UK,,London,3,4,2025,50.3
+Europe,UK,,London,3,5,2025,51.7
+Europe,UK,,London,3,6,2025,53.3
+Europe,UK,,London,3,7,2025,55.1
+Europe,UK,,London,3,8,2025,56.7
+Europe,UK,,London,3,9,2025,58.0
+Europe,UK,,London,3,10,2025,59.0
+Europe,UK,,London,3,11,2025,59.5
+Europe,UK,,London,3,12,2025,59.5
+Europe,UK,,London,3,13,2025,59.0
+Europe,UK,,London,3,14,2025,58.3
+Europe,UK,,London,3,15,2025,57.5
+Europe,UK,,London,3,16,2025,56.6
+Europe,UK,,London,3,17,2025,56.0
+Europe,UK,,London,3,18,2025,55.7
+Europe,UK,,London,3,19,2025,55.7
+Europe,UK,,London,3,20,2025,56.2
+Europe,UK,,London,3,21,2025,57.0
+Europe,UK,,London,3,22,2025,58.0
+Europe,UK,,London,3,23,2025,59.1
+Europe,UK,,London,3,24,2025,60.0
+Europe,UK,,London,3,25,2025,60.8
+Europe,UK,,London,3,26,2025,61.1
+Europe,UK,,London,3,27,2025,61.0
+Europe,UK,,London,3,28,2025,60.5
+Europe,UK,,London,3,29,2025,59.7
+Europe,UK,,London,3,30,2025,58.6
+Europe,UK,,London,3,31,2025,57.4
+Asia,Japan,,Tokyo,1,1,2025,45.0
+Asia,Japan,,Tokyo,1,2,2025,46.8
+Asia,Japan,,Tokyo,1,3,2025,48.3
+Asia,Japan,,Tokyo,1,4,2025,49.3
+Asia,Japan,,Tokyo,1,5,2025,49.8
+Asia,Japan,,Tokyo,1,6,2025,49.5
+Asia,Japan,,Tokyo,1,7,2025,48.7
+Asia,Japan,,Tokyo,1,8,2025,47.4
+Asia,Japan,,Tokyo,1,9,2025,45.9
+Asia,Japan,,Tokyo,1,10,2025,44.3
+Asia,Japan,,Tokyo,1,11,2025,43.0
+Asia,Japan,,Tokyo,1,12,2025,42.1
+Asia,Japan,,Tokyo,1,13,2025,41.7
+Asia,Japan,,Tokyo,1,14,2025,42.0
+Asia,Japan,,Tokyo,1,15,2025,42.8
+Asia,Japan,,Tokyo,1,16,2025,44.2
+Asia,Japan,,Tokyo,1,17,2025,45.8
+Asia,Japan,,Tokyo,1,18,2025,47.5
+Asia,Japan,,Tokyo,1,19,2025,49.1
+Asia,Japan,,Tokyo,1,20,2025,50.3
+Asia,Japan,,Tokyo,1,21,2025,51.1
+Asia,Japan,,Tokyo,1,22,2025,51.3
+Asia,Japan,,Tokyo,1,23,2025,50.9
+Asia,Japan,,Tokyo,1,24,2025,50.2
+Asia,Japan,,Tokyo,1,25,2025,49.3
+Asia,Japan,,Tokyo,1,26,2025,48.3
+Asia,Japan,,Tokyo,1,27,2025,47.6
+Asia,Japan,,Tokyo,1,28,2025,47.3
+Asia,Japan,,Tokyo,1,29,2025,47.5
+Asia,Japan,,Tokyo,1,30,2025,48.3
+Asia,Japan,,Tokyo,1,31,2025,49.7
+Asia,Japan,,Tokyo,2,1,2025,51.5
+Asia,Japan,,Tokyo,2,2,2025,53.6
+Asia,Japan,,Tokyo,2,3,2025,55.7
+Asia,Japan,,Tokyo,2,4,2025,57.5
+Asia,Japan,,Tokyo,2,5,2025,58.9
+Asia,Japan,,Tokyo,2,6,2025,59.8
+Asia,Japan,,Tokyo,2,7,2025,59.9
+Asia,Japan,,Tokyo,2,8,2025,59.5
+Asia,Japan,,Tokyo,2,9,2025,58.5
+Asia,Japan,,Tokyo,2,10,2025,57.2
+Asia,Japan,,Tokyo,2,11,2025,55.7
+Asia,Japan,,Tokyo,2,12,2025,54.4
+Asia,Japan,,Tokyo,2,13,2025,53.4
+Asia,Japan,,Tokyo,2,14,2025,53.0
+Asia,Japan,,Tokyo,2,15,2025,53.1
+Asia,Japan,,Tokyo,2,16,2025,53.7
+Asia,Japan,,Tokyo,2,17,2025,54.8
+Asia,Japan,,Tokyo,2,18,2025,56.3
+Asia,Japan,,Tokyo,2,19,2025,57.8
+Asia,Japan,,Tokyo,2,20,2025,59.2
+Asia,Japan,,Tokyo,2,21,2025,60.3
+Asia,Japan,,Tokyo,2,22,2025,60.9
+Asia,Japan,,Tokyo,2,23,2025,60.9
+Asia,Japan,,Tokyo,2,24,2025,60.5
+Asia,Japan,,Tokyo,2,25,2025,59.6
+Asia,Japan,,Tokyo,2,26,2025,58.4
+Asia,Japan,,Tokyo,2,27,2025,57.2
+Asia,Japan,,Tokyo,2,28,2025,56.2
+Asia,Japan,,Tokyo,3,1,2025,55.6
+Asia,Japan,,Tokyo,3,2,2025,55.6
+Asia,Japan,,Tokyo,3,3,2025,56.2
+Asia,Japan,,Tokyo,3,4,2025,57.5
+Asia,Japan,,Tokyo,3,5,2025,59.2
+Asia,Japan,,Tokyo,3,6,2025,61.3
+Asia,Japan,,Tokyo,3,7,2025,63.5
+Asia,Japan,,Tokyo,3,8,2025,65.5
+Asia,Japan,,Tokyo,3,9,2025,67.2
+Asia,Japan,,Tokyo,3,10,2025,68.4
+Asia,Japan,,Tokyo,3,11,2025,69.0
+Asia,Japan,,Tokyo,3,12,2025,68.9
+Asia,Japan,,Tokyo,3,13,2025,68.3
+Asia,Japan,,Tokyo,3,14,2025,67.3
+Asia,Japan,,Tokyo,3,15,2025,66.1
+Asia,Japan,,Tokyo,3,16,2025,65.0
+Asia,Japan,,Tokyo,3,17,2025,64.2
+Asia,Japan,,Tokyo,3,18,2025,63.8
+Asia,Japan,,Tokyo,3,19,2025,63.9
+Asia,Japan,,Tokyo,3,20,2025,64.6
+Asia,Japan,,Tokyo,3,21,2025,65.7
+Asia,Japan,,Tokyo,3,22,2025,67.2
+Asia,Japan,,Tokyo,3,23,2025,68.7
+Asia,Japan,,Tokyo,3,24,2025,70.1
+Asia,Japan,,Tokyo,3,25,2025,71.2
+Asia,Japan,,Tokyo,3,26,2025,71.8
+Asia,Japan,,Tokyo,3,27,2025,71.8
+Asia,Japan,,Tokyo,3,28,2025,71.3
+Asia,Japan,,Tokyo,3,29,2025,70.2
+Asia,Japan,,Tokyo,3,30,2025,68.9
+Asia,Japan,,Tokyo,3,31,2025,67.4

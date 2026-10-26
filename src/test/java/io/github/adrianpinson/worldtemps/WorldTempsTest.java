@@ -26,7 +26,7 @@ class WorldTempsTest {
         assertEquals(0, result.status());
         assertEquals("", result.error());
         assertTrue(result.output().contains("synthetic demo"));
-        assertTrue(result.output().contains("Loaded 18 readings; rejected 0"));
+        assertTrue(result.output().contains("Loaded 270 readings; rejected 0"));
         assertTrue(result.output().contains("Invalid option"));
         assertTrue(result.output().contains("London, UK | 37.0 °F"));
         assertTrue(result.output().contains("Longview, Texas, US | 89.0 °F"));
