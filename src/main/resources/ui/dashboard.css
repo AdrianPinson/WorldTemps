@@ -93,3 +93,15 @@
 .scroll-bar .thumb { -fx-background-color: #ced6dc; -fx-background-radius: 8; }
 .scroll-bar .increment-button, .scroll-bar .decrement-button { -fx-background-color: transparent; }
 .tooltip { -fx-background-color: #1d3547; -fx-text-fill: white; -fx-font-size: 11px; -fx-padding: 9; -fx-background-radius: 6; }
+.weather-dialog { -fx-background-color: #f5f6f8; -fx-font-family: "DejaVu Sans"; -fx-font-size: 11px; }
+.weather-dialog .header-panel { -fx-background-color: #ffffff; -fx-padding: 18; }
+.weather-dialog .header-panel .label { -fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #203746; }
+.weather-dialog .button { -fx-background-color: #ffffff; -fx-text-fill: #425d70; -fx-border-color: #dce3e9; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 9 13; }
+.weather-dialog .button:hover { -fx-background-color: #fff1e5; }
+.weather-dialog .button:default { -fx-background-color: #1b3447; -fx-text-fill: #ffffff; -fx-border-color: #1b3447; }
+.weather-dialog .text-field, .weather-dialog .date-picker { -fx-background-color: #ffffff; -fx-border-color: #dce3e9; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 5; }
+.weather-dialog .date-picker .text-field { -fx-border-width: 0; }
+.weather-dialog .date-picker .arrow-button { -fx-background-color: transparent; }
+.weather-dialog .list-view { -fx-background-color: #ffffff; -fx-border-color: #dce3e9; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 3; }
+.weather-dialog .list-cell { -fx-background-color: #ffffff; -fx-text-fill: #4c6070; -fx-padding: 7; -fx-font-size: 10px; }
+.weather-dialog .list-cell:filled:selected { -fx-background-color: #fff0e3; -fx-text-fill: #8d502a; }

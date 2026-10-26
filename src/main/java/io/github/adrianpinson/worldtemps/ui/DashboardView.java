@@ -10,6 +10,9 @@ import io.github.adrianpinson.worldtemps.service.DashboardQuery.Location;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Result;
 import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis;
 import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis.Resolution;
+import io.github.adrianpinson.worldtemps.service.TemperatureData;
+import io.github.adrianpinson.worldtemps.weather.OpenMeteoClient;
+import io.github.adrianpinson.worldtemps.weather.WeatherLocation;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -65,7 +68,9 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private final Button apply = new Button("Apply filters");
     private final Button reset = new Button("Reset filters");
     private final Button importCsv = new Button("↑  Import CSV");
-    private final Button demo = new Button("Load demo");
+    private final Button demo = new Button("Offline demo");
+    private final Button findWeather = new Button("Find weather");
+    private final Label attribution = new Label("Weather: Open-Meteo / ECMWF ERA5 (CC BY 4.0) · Location data: GeoNames");
     private final Button details = new Button("Import details");
     private final Label feedback = new Label();
     private final Label source = new Label("No dataset loaded");
@@ -97,6 +102,8 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     });
     private DashboardQuery query;
     private ImportResult lastImport;
+    private OpenMeteoClient.Dataset lastWeather;
+    private final OpenMeteoClient weatherClient;
     private Result currentResult;
     private List<Location> selectedCities = List.of();
     private List<TemperatureAnalysis.Series> currentSeries = List.of();
@@ -105,6 +112,11 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private boolean closed;
 
     public DashboardView() {
+        this(new OpenMeteoClient());
+    }
+
+    public DashboardView(OpenMeteoClient weatherClient) {
+        this.weatherClient = Objects.requireNonNull(weatherClient);
         getStyleClass().add("dashboard");
         setLeft(sidebar());
         setCenter(workspace());
@@ -188,15 +200,19 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         Region headerSpacer = new Region();
         HBox.setHgrow(headerSpacer, Priority.ALWAYS);
         sourceBadge.getStyleClass().add("source-badge");
+        sourceBadge.setId("source-badge");
+        sourceHint.setId("source-hint");
         demo.getStyleClass().add("secondary-button");
         demo.setId("load-demo");
-        importCsv.getStyleClass().add("primary-button");
+        importCsv.getStyleClass().add("secondary-button");
         importCsv.setId("import-csv");
+        findWeather.setId("find-weather");
+        findWeather.getStyleClass().add("primary-button");
         progress.setPrefSize(20, 20);
         progress.setMaxSize(20, 20);
         progress.setVisible(false);
         progress.managedProperty().bind(progress.visibleProperty());
-        HBox actions = new HBox(10, progress, sourceBadge, demo, importCsv);
+        HBox actions = new HBox(8, progress, sourceBadge, demo, importCsv, findWeather);
         actions.setAlignment(Pos.CENTER_RIGHT);
         HBox header = new HBox(16, titles, headerSpacer, actions);
         header.setAlignment(Pos.CENTER_LEFT);
@@ -304,7 +320,11 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         tableCard.getStyleClass().add("surface");
         status.setId("status-label");
         status.getStyleClass().add("caption");
-        main.getChildren().addAll(header, cards, chartCard, tableCard, status);
+        attribution.getStyleClass().add("caption");
+        attribution.setWrapText(true);
+        attribution.setVisible(false);
+        attribution.managedProperty().bind(attribution.visibleProperty());
+        main.getChildren().addAll(header, cards, chartCard, tableCard, status, attribution);
         ScrollPane scroll = new ScrollPane(main);
         scroll.setFitToWidth(true);
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
@@ -385,6 +405,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         exportChart.setOnAction(e -> chooseExport(true));
         reset.setOnAction(e -> resetFilters(false));
         demo.setOnAction(e -> loadDemo());
+        findWeather.setOnAction(e -> openWeatherLoader());
         importCsv.setOnAction(e -> {
             FileChooser picker = new FileChooser();
             picker.setTitle("Import temperature data");
@@ -641,6 +662,70 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         return load(() -> Files.newBufferedReader(path, StandardCharsets.UTF_8), path.getFileName().toString(), false);
     }
 
+    public void openWeatherLoader() {
+        if (busy || closed) { return; }
+        new WeatherLoadDialog(weatherClient, getScene().getWindow()).showAndWait()
+                .ifPresent(request -> loadWeather(request.cities(), request.start(), request.end()));
+    }
+
+    public CompletableFuture<Void> loadWeather(List<WeatherLocation> locations, LocalDate start, LocalDate end) {
+        if (busy || closed) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Another operation is running or the dashboard is closed."));
+        }
+        List<WeatherLocation> selection = List.copyOf(locations);
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        setBusy(true);
+        feedback.setVisible(false);
+        status.setText("Loading historical weather…");
+        Task<OpenMeteoClient.Dataset> task = new Task<>() {
+            @Override protected OpenMeteoClient.Dataset call() throws Exception {
+                return weatherClient.load(selection, start, end);
+            }
+        };
+        task.setOnSucceeded(e -> {
+            setBusy(false);
+            if (closed) { completion.cancel(false); return; }
+            lastWeather = task.getValue();
+            lastImport = null;
+            query = new DashboardQuery(new TemperatureData(lastWeather.readings()));
+            filterContent.setDisable(false);
+            source.setText("Open-Meteo / ERA5");
+            long offline = lastWeather.cities().stream().filter(c -> c.origin() == OpenMeteoClient.Origin.OFFLINE_CACHE).count();
+            long cached = lastWeather.cities().stream().filter(c -> c.origin() != OpenMeteoClient.Origin.NETWORK).count();
+            sourceHint.setText("Reanalysis · daily means · " + cached + " cached cities"
+                    + (offline > 0 ? " · Offline cache may be out of date" : ""));
+            sourceBadge.setText(offline > 0 ? "OFFLINE CACHE" : "WEATHER API");
+            sourceBadge.getStyleClass().remove("imported-badge");
+            sourceBadge.getStyleClass().add("imported-badge");
+            attribution.setVisible(true);
+            details.setText("Source details");
+            details.setDisable(false);
+            status.setText(String.format(Locale.US, "Loaded %,d daily means · %,d unavailable days · %d cities · Fahrenheit%s",
+                    lastWeather.readings().size(), lastWeather.missingDays(), lastWeather.cities().size(),
+                    offline > 0 ? " · Offline cached data" : ""));
+            resetFilters(true);
+            List<Location> labels = lastWeather.cities().stream().map(c -> new Location(c.location().country(),
+                    c.location().state(), c.location().city())).toList();
+            city.setValue(labels.get(0));
+            comparisonA.setValue(labels.size() > 1 ? labels.get(1) : null);
+            comparisonB.setValue(labels.size() > 2 ? labels.get(2) : null);
+            from.setValue(start);
+            to.setValue(end);
+            applyFilters();
+            completion.complete(null);
+        });
+        task.setOnFailed(e -> {
+            setBusy(false);
+            if (!closed) {
+                error("Weather load failed: " + Objects.toString(task.getException().getMessage(), "Try again later."));
+                status.setText(query == null ? "No dataset loaded · Try Offline demo" : "Weather load failed · previous dataset retained");
+            }
+            completion.completeExceptionally(task.getException());
+        });
+        imports.submit(task);
+        return completion;
+    }
+
     private CompletableFuture<Void> load(ReaderSource reader, String name, boolean synthetic) {
         if (closed || busy) {
             return CompletableFuture.failedFuture(new IllegalStateException("An import is already running or the dashboard is closed."));
@@ -667,6 +752,9 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                 return;
             }
             lastImport = task.getValue();
+            lastWeather = null;
+            attribution.setVisible(false);
+            details.setText("Import details");
             query = new DashboardQuery(lastImport.data());
             filterContent.setDisable(false);
             source.setText(name);
@@ -699,6 +787,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         busy = value;
         importCsv.setDisable(value);
         demo.setDisable(value);
+        findWeather.setDisable(value);
         filterContent.setDisable(value || query == null);
         resolution.setDisable(value);
         comparisonControls.setDisable(value || city.getValue() == null);
@@ -712,6 +801,19 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     }
 
     private void showImportDetails() {
+        if (lastWeather != null) {
+            StringBuilder text = new StringBuilder("Historical daily mean temperatures, not station observations or forecasts.\n"
+                    + "Source: Open-Meteo / ECMWF ERA5 reanalysis, CC BY 4.0.\n"
+                    + "https://open-meteo.com/en/docs/historical-weather-api\n"
+                    + "Locations: GeoNames via Open-Meteo. https://www.geonames.org/\n\n");
+            lastWeather.cities().forEach(city -> text.append(city.location()).append('\n')
+                    .append("Coordinates: ").append(city.location().latitude()).append(", ").append(city.location().longitude())
+                    .append("\nTimezone: ").append(city.location().timezone()).append("\nOrigin: ").append(city.origin())
+                    .append("\nFetched: ").append(city.fetchedAt()).append("\nUnavailable days: ").append(city.missingDays())
+                    .append(city.cacheSaved() ? "" : "\nCould not save a local cache copy.").append("\n\n"));
+            showDetails("Weather source details", text.toString());
+            return;
+        }
         if (lastImport == null) {
             return;
         }
@@ -725,13 +827,17 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         if (lastImport.rejectedRows() == 0) {
             text.append("All records passed import validation.");
         }
-        TextArea content = new TextArea(text.toString());
+        showDetails("Import details", text.toString());
+    }
+
+    private void showDetails(String title, String text) {
+        TextArea content = new TextArea(text);
         content.setEditable(false);
         content.setWrapText(true);
         content.setPrefSize(520, 280);
         Dialog<Void> dialog = new Dialog<>();
         dialog.initOwner(getScene().getWindow());
-        dialog.setTitle("Import details");
+        dialog.setTitle(title);
         dialog.setHeaderText(source.getText());
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);

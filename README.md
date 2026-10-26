@@ -2,10 +2,14 @@
 
 A Java temperature explorer with a JavaFX desktop dashboard and a reusable analysis
 core. Filter daily readings by location and date, compare cities, aggregate trends,
-and export the results. This project began as linked-list coursework and now retains
+and export the results. Historical weather comes from Open-Meteo, with CSV import
+and an offline demo also available. This project began as linked-list coursework and now retains
 that foundation behind a separate presentation and query layer.
 
-![WorldTemps city comparisons and monthly averages](docs/comparison.png)
+![WorldTemps with Open-Meteo historical weather](docs/weather-api.png)
+
+The preview shows ERA5 daily means for Longview, London, and Tokyo, January–March
+2025, fetched from Open-Meteo and reused from the validated local cache.
 
 ## Run the desktop app
 
@@ -17,14 +21,60 @@ mvn clean verify
 mvn javafx:run
 ```
 
-The app opens a synthetic sample with 270 readings: 90 daily observations each for
-Longview, London, and Tokyo, from January 1 through March 31, 2025. These values are
-**invented demonstration data in Fahrenheit**, not historical observations or
-forecasts. Longview is selected initially so the chart is immediately useful.
+The app opens **Find historical weather**. Search for a city, select the correct
+state/country and coordinates, and add up to three locations. Choose the date range,
+then load. No API key or account is needed for the free noncommercial endpoint.
 
-Use **Import CSV** to explore your own dataset. Imports run on a background thread.
-If an import fails or has no valid readings, the previous dataset remains available.
-The source panel and import details distinguish accepted and rejected records.
+![City search and archive selection](docs/weather-search.png)
+
+**Find weather** reopens this dialog at any time. **Import CSV** loads local data.
+**Offline demo** loads 270 invented Fahrenheit readings for Longview, London, and
+Tokyo; those values are clearly labeled synthetic and are not historical observations.
+
+### Weather API behavior
+
+- City search uses Open-Meteo's GeoNames geocoding endpoint, then requests ERA5 daily
+  mean temperatures for the selected coordinates, dates, and timezone.
+- Data is **historical reanalysis**, not a live forecast or a direct station record.
+  Minimum/maximum cards are extrema of daily mean readings, not daily high/low temperatures.
+- Dates run from January 1, 1940 through six days before the current UTC date. ERA5
+  is published with a five-day delay; the application keeps one additional day of
+  margin. Each load is limited to 3,660 days and three cities.
+- API temperatures are requested in Fahrenheit. Responses are checked for supported
+  units, aligned arrays, valid/unique dates, finite numbers, and the requested range.
+  Celsius responses are converted explicitly. Null or absent days are counted as
+  unavailable and are never substituted with zero.
+- Every selected city must load successfully before replacing the current dataset.
+  A failed load preserves the previous view. API datasets replace, rather than blend
+  with, CSV or synthetic demo data.
+- Region filters for API data use the first IANA timezone component (for example,
+  America, Europe, or Asia), not inferred continents. Source details show full
+  coordinates, timezone, origin, fetched time, and unavailable-day counts.
+- Selected locations with identical city/state/country labels but different
+  coordinates are rejected, so the existing comparison model cannot silently merge them.
+
+Searches and loads run off the UI thread. Requests use an 8-second connection
+limit and a 15-second request timeout. HTTP 429 and server errors receive one
+retry with a delay capped at two seconds; other client errors are not retried.
+There is no request on every keystroke: search is an explicit action.
+
+### Cache and offline use
+
+Validated responses are stored under `~/.worldtemps/weather-cache`. Cache keys
+include the full request: coordinates, date range, units, timezone, and model.
+Weather responses remain fresh for seven days; city searches for thirty days.
+Fresh entries are used without an HTTP request. Corrupt entries are ignored.
+
+If a network request fails or the service is unavailable/rate-limited, an older
+validated matching weather entry may be used. The app prominently labels this
+**OFFLINE CACHE**, retains its original fetched time, and notes that it may be out
+of date. Invalid requests, malformed new responses, and cancellation do not silently
+fall back to stale data. Failure to write the cache does not discard a successful
+weather response; source details report that the cache copy was not saved.
+
+Exact previously loaded ranges work offline; arbitrary new ranges still need the
+API. The standalone demo remains available with no prior downloads. Cache files
+can be removed when the app is closed to force a new request.
 
 ### Dashboard features
 
@@ -133,6 +183,10 @@ the header as record 1, not physical lines when quoted fields contain newlines.
 | `service/DashboardQuery` | Shared filters, location options, and summary calculations |
 | `service/TemperatureAnalysis` | Per-city daily, monthly, and yearly aggregation |
 | `exporter/CsvExporter` | Raw and analysis CSV exports |
+| `weather/OpenMeteoClient` | Geocoding, response validation, dates, units, and cache policy |
+| `weather/HttpWeatherTransport` | HTTP timeouts and bounded retry |
+| `weather/WeatherCache` | Exact-request disk cache |
+| `ui/WeatherLoadDialog` | City search, explicit selection, and archive dates |
 | `ui/DashboardView` | JavaFX controls, presentation, and background import orchestration |
 | `ui/TemperatureDashboard` | Desktop application lifecycle |
 | `WorldTemps` | Console entry point |
@@ -146,27 +200,47 @@ claims. The original coursework remains available in Git history.
 ## Validation
 
 ```sh
-# 52 unit and console regression tests; no graphical session required
+# 69 unit and console regression tests; no graphical session required
 mvn clean verify
 
-# Plus 10 integration tests against real JavaFX controls; requires a display
+# Plus 14 integration tests against real JavaFX controls; requires a display
 mvn -Pui-tests clean verify
 
 # Linux CI / headless desktop environment
 xvfb-run -a mvn -Pui-tests clean verify
 ```
 
+Tests run without external API calls: weather payloads are explicit invented fixtures,
+and HTTP transport tests use a local test server. A separate live smoke check loaded
+three geocoded cities and 270 ERA5 daily means, then verified cache-only reuse.
+
 The UI tests exercise filter/card/chart/table consistency, date validation, reset,
 empty matches, sorting, import recovery, multi-city comparisons, resolution changes,
 export success/failure, and layout. Unit tests also verify leap years, year
 boundaries, weighted means, partial periods, quoted Unicode CSV round trips, and
-failed destination cleanup. They also fail on
-uncaught JavaFX application-thread errors. Screenshots of the running dashboard
+failed destination cleanup, request timeouts/retries, response validation, unit conversion,
+cache freshness, corrupt entries, offline provenance, and weather-load recovery.
+UI tests also fail on uncaught JavaFX application-thread errors. Screenshots of the running dashboard
 and city comparisons are generated in `target/ui/`. GitHub Actions builds the app, smoke
 tests the console JAR, runs JavaFX tests under Xvfb, and uploads the preview.
 
 Linux desktops need GTK 3 and X11 libraries. On Ubuntu 24.04, install
 `libgtk-3-0t64 libxtst6`; headless tests also require `xvfb`.
+
+## Weather data attribution
+
+Weather data: [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
+and ECMWF ERA5 reanalysis, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+The app processes daily mean temperature data into comparisons and averages and
+may convert Celsius to Fahrenheit. Location search data is based on
+[GeoNames](https://www.geonames.org/) via the
+[Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api).
+See [Open-Meteo's terms](https://open-meteo.com/en/terms) for the free endpoint's
+noncommercial-use and request limits.
+
+API screenshots show fetched historical data; the offline demo and unit-test
+responses are synthetic and labeled accordingly. This application does not
+provide a current-weather or forecast view.
 
 ## Remaining work
 

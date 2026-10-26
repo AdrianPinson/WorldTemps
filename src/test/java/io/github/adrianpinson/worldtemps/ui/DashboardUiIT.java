@@ -4,6 +4,10 @@ import io.github.adrianpinson.worldtemps.model.Reading;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Location;
 import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis.Resolution;
 import io.github.adrianpinson.worldtemps.importer.CsvTemperatureLoader;
+import io.github.adrianpinson.worldtemps.weather.OpenMeteoClient;
+import io.github.adrianpinson.worldtemps.weather.WeatherCache;
+import io.github.adrianpinson.worldtemps.weather.WeatherLocation;
+import static io.github.adrianpinson.worldtemps.weather.WeatherFixtures.*;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -266,6 +270,106 @@ class DashboardUiIT {
         ComboBox<Location> choices = combo(id);
         choices.setValue(choices.getItems().stream().filter(java.util.Objects::nonNull)
                 .filter(location -> location.city().equals(name)).findFirst().orElseThrow());
+    }
+
+    @Test void weatherDataFlowsThroughComparisonsCardsAndCsvExport() throws Exception {
+        var api = new OpenMeteoClient(uri -> daily("°F", "45,null,53"), new WeatherCache(temporary.resolve("cache")), CLOCK);
+        fx(() -> {
+            view.close();
+            view = new DashboardView(api);
+            stage.getScene().setRoot(view);
+            return null;
+        });
+        fx(() -> view.loadWeather(CITIES, LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 3))).get(15, TimeUnit.SECONDS);
+        fx(() -> {
+            assertEquals("6", label("count-value").getText());
+            assertEquals("WEATHER API", label("source-badge").getText());
+            assertEquals(3, chart().getData().size());
+            assertTrue(label("status-label").getText().contains("3 unavailable days"));
+            assertTrue(label("source-hint").getText().contains("Reanalysis"));
+            assertFalse(button("find-weather").isDisabled());
+            return null;
+        });
+        Path csv = temporary.resolve("weather.csv");
+        fx(() -> view.exportReadings(csv)).get(15, TimeUnit.SECONDS);
+        assertEquals(6, new CsvTemperatureLoader().load(Files.newBufferedReader(csv)).data().size());
+    }
+
+    @Test void failedWeatherRequestKeepsThePreviousDemoDataset() throws Exception {
+        var api = new OpenMeteoClient(uri -> { throw new java.io.IOException("Connection unavailable"); }, new WeatherCache(temporary.resolve("cache")), CLOCK);
+        fx(() -> {
+            view.close();
+            view = new DashboardView(api);
+            stage.getScene().setRoot(view);
+            return view.loadDemo();
+        }).get(15, TimeUnit.SECONDS);
+        var failure = fx(() -> view.loadWeather(java.util.List.of(LONGVIEW), LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 3)));
+        assertThrows(java.util.concurrent.ExecutionException.class, () -> failure.get(15, TimeUnit.SECONDS));
+        fx(() -> {
+            assertEquals("90", label("count-value").getText());
+            assertEquals("DEMO DATA", label("source-badge").getText());
+            assertTrue(label("status-label").getText().contains("previous dataset retained"));
+            assertFalse(button("find-weather").isDisabled());
+            return null;
+        });
+    }
+
+    @Test void citySearchDialogSupportsExplicitSelectionDuplicatesAndDateValidation() throws Exception {
+        var api = new OpenMeteoClient(uri -> GEOCODING, new WeatherCache(temporary.resolve("search-cache")), CLOCK);
+        WeatherLoadDialog dialog = fx(() -> {
+            WeatherLoadDialog candidate = new WeatherLoadDialog(api, stage);
+            candidate.show();
+            return candidate;
+        });
+        try {
+            assertEquals(3, fx(() -> dialog.search("Longview")).get(15, TimeUnit.SECONDS).size());
+            fx(() -> {
+                var pane = dialog.getDialogPane();
+                @SuppressWarnings("unchecked") ListView<WeatherLocation> results = (ListView<WeatherLocation>) pane.lookup("#weather-results");
+                @SuppressWarnings("unchecked") ListView<WeatherLocation> selected = (ListView<WeatherLocation>) pane.lookup("#weather-chosen");
+                Button add = (Button) pane.lookup("#weather-add");
+                results.getSelectionModel().select(0);
+                add.fire();
+                add.fire();
+                assertEquals(1, selected.getItems().size());
+                results.getSelectionModel().select(1);
+                add.fire();
+                results.getSelectionModel().select(2);
+                add.fire();
+                assertEquals(3, selected.getItems().size());
+                DatePicker end = (DatePicker) pane.lookup("#weather-end");
+                end.setValue(LocalDate.of(2026, 11, 1));
+                ((Button) pane.lookup("#weather-load")).fire();
+                assertTrue(dialog.isShowing());
+                assertTrue(((Label) pane.lookup("#weather-message")).getText().contains("valid dates"));
+                ((DatePicker) pane.lookup("#weather-start")).setValue(LocalDate.of(2025, 1, 1));
+                end.setValue(LocalDate.of(2025, 1, 3));
+                ((Button) pane.lookup("#weather-load")).fire();
+                assertFalse(dialog.isShowing());
+                assertEquals(3, dialog.getResult().cities().size());
+                return null;
+            });
+        } finally {
+            fx(() -> { dialog.close(); return null; });
+        }
+    }
+
+    @Test void expiredWeatherCacheIsLabeledAsOfflineInTheDashboard() throws Exception {
+        WeatherCache cache = new WeatherCache(temporary.resolve("cache"));
+        new OpenMeteoClient(uri -> DAILY, cache, CLOCK).load(java.util.List.of(LONGVIEW), LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 3));
+        var api = new OpenMeteoClient(uri -> { throw new java.io.IOException("Offline"); }, cache, java.time.Clock.offset(CLOCK, java.time.Duration.ofDays(8)));
+        fx(() -> {
+            view.close();
+            view = new DashboardView(api);
+            stage.getScene().setRoot(view);
+            return view.loadWeather(java.util.List.of(LONGVIEW), LocalDate.of(2025, 1, 1), LocalDate.of(2025, 1, 3));
+        }).get(15, TimeUnit.SECONDS);
+        fx(() -> {
+            assertEquals("OFFLINE CACHE", label("source-badge").getText());
+            assertTrue(label("source-hint").getText().contains("out of date"));
+            assertEquals("3", label("count-value").getText());
+            return null;
+        });
     }
 
     private void capture(String filename) throws Exception {
