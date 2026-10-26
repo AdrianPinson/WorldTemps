@@ -5,12 +5,13 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.adrianpinson</groupId>
   <artifactId>worldtemps</artifactId>
-  <version>1.0.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <name>WorldTemps</name>
-  <description>Temperature CSV exploration with a reusable Java analysis core.</description>
+  <description>Historical temperature analytics with JavaFX, Open-Meteo, indexed queries, and CSV exchange.</description>
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <package.platform>local</package.platform>
   </properties>
   <dependencies>
     <dependency>
@@ -36,7 +37,7 @@
     </dependency>
   </dependencies>
   <build>
-    <finalName>worldtemps</finalName>
+    <finalName>worldtemps-core</finalName>
     <plugins>
       <plugin>
         <groupId>org.openjfx</groupId>
@@ -61,28 +62,30 @@
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.4.1</version>
         <configuration>
-          <finalName>worldtemps-core</finalName>
+          <archive>
+            <manifest>
+              <mainClass>io.github.adrianpinson.worldtemps.ui.DesktopLauncher</mainClass>
+              <addClasspath>true</addClasspath>
+              <classpathPrefix>lib/</classpathPrefix>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+            </manifest>
+          </archive>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <version>3.6.0</version>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.7.1</version>
         <executions>
           <execution>
+            <id>console-jar</id>
             <phase>package</phase>
-            <goals><goal>shade</goal></goals>
+            <goals><goal>single</goal></goals>
             <configuration>
-              <createDependencyReducedPom>false</createDependencyReducedPom>
-              <outputFile>${project.build.directory}/worldtemps.jar</outputFile>
-              <artifactSet>
-                <excludes><exclude>org.openjfx:*</exclude></excludes>
-              </artifactSet>
-              <transformers>
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>io.github.adrianpinson.worldtemps.WorldTemps</mainClass>
-                </transformer>
-              </transformers>
+              <descriptors><descriptor>packaging/console.xml</descriptor></descriptors>
+              <finalName>worldtemps</finalName>
+              <appendAssemblyId>false</appendAssemblyId>
+              <archive><manifest><mainClass>io.github.adrianpinson.worldtemps.WorldTemps</mainClass></manifest></archive>
             </configuration>
           </execution>
         </executions>
@@ -90,6 +93,65 @@
     </plugins>
   </build>
   <profiles>
+    <profile>
+      <id>desktop-package</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <version>3.8.1</version>
+            <executions>
+              <execution>
+                <id>desktop-libraries</id>
+                <phase>prepare-package</phase>
+                <goals><goal>copy-dependencies</goal></goals>
+                <configuration>
+                  <includeScope>runtime</includeScope>
+                  <outputDirectory>${project.build.directory}/app/lib</outputDirectory>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>desktop-files</id>
+                <phase>package</phase>
+                <goals><goal>copy-resources</goal></goals>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/app</outputDirectory>
+                  <resources>
+                    <resource><directory>${project.build.directory}</directory><includes><include>worldtemps-core.jar</include></includes></resource>
+                    <resource><directory>packaging</directory><includes><include>start-worldtemps.sh</include><include>start-worldtemps.cmd</include><include>README.txt</include></includes></resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>3.7.1</version>
+            <executions>
+              <execution>
+                <id>portable-desktop-zip</id>
+                <phase>package</phase>
+                <goals><goal>single</goal></goals>
+                <configuration>
+                  <descriptors><descriptor>packaging/desktop.xml</descriptor></descriptors>
+                  <finalName>worldtemps-${package.platform}-portable</finalName>
+                  <appendAssemblyId>false</appendAssemblyId>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
     <profile>
       <id>ui-tests</id>
       <build>

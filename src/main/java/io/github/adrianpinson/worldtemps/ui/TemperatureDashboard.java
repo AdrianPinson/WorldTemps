@@ -18,7 +18,9 @@ public final class TemperatureDashboard extends Application {
         stage.setScene(scene);
         stage.show();
         var arguments = getParameters().getRaw();
-        if (arguments.isEmpty()) {
+        if (arguments.size() == 1 && arguments.get(0).equals("--demo")) {
+            dashboard.loadDemo();
+        } else if (arguments.isEmpty()) {
             javafx.application.Platform.runLater(dashboard::openWeatherLoader);
         } else {
             dashboard.importFile(Path.of(arguments.get(0)));

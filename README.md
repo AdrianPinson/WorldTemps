@@ -11,7 +11,22 @@ that foundation behind a separate presentation and query layer.
 The preview shows ERA5 daily means for Longview, London, and Tokyo, January–March
 2025, fetched from Open-Meteo and reused from the validated local cache.
 
-## Run the desktop app
+## Try the packaged desktop app
+
+Download the bundled ZIP matching your OS and architecture from the latest
+successful GitHub Actions package run, extract it, and open WorldTemps. These
+packages include Java and JavaFX; Maven and a separate Java installation are not
+required. Portable ZIPs are also available for machines with Java 17+.
+
+CI builds Windows, macOS, and Linux packages, checks their extracted launchers,
+and supplies SHA-256 checksums and source provenance. On `main`, a successful
+package matrix prepares a **draft** versioned release for review; it does not
+publish automatically. See [package and release instructions](docs/release.md)
+for launch paths, platform requirements, and validation limits.
+
+Use `--demo` for immediate offline startup. The default opens city search.
+
+## Build and run from source
 
 Requirements: **JDK 17+**, **Maven 3.9+**, and a graphical desktop session.
 Maven downloads the JavaFX libraries for your operating system.
@@ -148,7 +163,8 @@ java -jar target/worldtemps.jar --help
 
 The JAR bundles its CSV dependencies and demo data, so it works from any working
 directory. It is the **console** distribution; use `mvn javafx:run` for the desktop
-interface. A native desktop installer is not included in this milestone.
+interface. Native app-image ZIPs with a bundled runtime are built separately; OS installers
+and developer signing/notarization are not included.
 
 ## CSV contract
 
@@ -192,15 +208,16 @@ the header as record 1, not physical lines when quoted fields contain newlines.
 | `WorldTemps` | Console entry point |
 
 The custom linked list preserves the project's data-structures foundation without
-coupling mutable nodes to reading records. The query layer contains no JavaFX code
-and returns immutable results. Imports hold data in memory; filters scan the data
-and sort matches chronologically. This milestone makes no large-dataset performance
-claims. The original coursework remains available in Git history.
+coupling mutable nodes to reading records. The query layer contains no JavaFX code and returns immutable results. It builds
+chronological and per-location indexes on the background load worker, uses binary
+date bounds, and merges up to three pre-sorted city ranges. Imports remain
+memory-resident. See the [performance report](docs/performance.md) for a reproducible
+500,000-row selective-query benchmark, construction cost, and limitations. The original coursework remains available in Git history.
 
 ## Validation
 
 ```sh
-# 69 unit and console regression tests; no graphical session required
+# 74 unit and console regression tests; no graphical session required
 mvn clean verify
 
 # Plus 14 integration tests against real JavaFX controls; requires a display
@@ -242,8 +259,24 @@ API screenshots show fetched historical data; the offline demo and unit-test
 responses are synthetic and labeled accordingly. This application does not
 provide a current-weather or forecast view.
 
-## Remaining work
+## Performance and packaging checks
 
-Pending approval: measured performance improvements for larger datasets, desktop
-release packaging, and final resume/demo polish. No performance benchmark claims
-or native installer are included in this milestone.
+`IndexedQueryTest` compares complete rows and summaries against the old scan
+algorithm over 400 deterministic randomized filters. On the documented selective
+workload, local medians were 29.504 ms/query for scan/sort and 0.012 ms/query for
+indexed lookup. Index construction took 815.7 ms once. These figures exclude
+import, rendering, API latency, and export; they are not an overall app speedup.
+
+```sh
+python scripts/benchmark.py
+python scripts/package_desktop.py
+```
+
+Package checks verify resources, CSV/JSON parsing, HTTP/cryptographic support,
+linked-runtime use, and launchers after extracting ZIPs into paths with spaces.
+Linux graphical behavior is tested under Xvfb. Other platforms receive headless
+package checks in CI and still benefit from manual visual testing.
+
+See the [release guide](docs/release.md), [version notes](docs/release-notes.md),
+and [demo/interview guide](docs/demo-guide.md). The latter includes resume wording
+and the architecture/tradeoffs to be ready to explain.
