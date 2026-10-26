@@ -1,11 +1,11 @@
 # WorldTemps
 
 A Java temperature explorer with a JavaFX desktop dashboard and a reusable analysis
-core. Filter daily readings by location and date, inspect trends, and explore the
-underlying CSV data. This project began as linked-list coursework and now retains
+core. Filter daily readings by location and date, compare cities, aggregate trends,
+and export the results. This project began as linked-list coursework and now retains
 that foundation behind a separate presentation and query layer.
 
-![WorldTemps desktop dashboard](docs/dashboard.png)
+![WorldTemps city comparisons and monthly averages](docs/comparison.png)
 
 ## Run the desktop app
 
@@ -33,7 +33,10 @@ The source panel and import details distinguish accepted and rejected records.
 - Inclusive date filters; blank dates mean no date bound.
 - Average, minimum, maximum, and count cards calculated from the same filtered
   readings shown in the table.
-- A city temperature chart with actual date spacing and hover details for readings.
+- Compare up to three cities with distinct chart colors and a legend.
+- Switch between raw readings, daily means, monthly means, and yearly means.
+- Hover for period averages, extrema, and source-reading counts.
+- Export filtered readings or chart data as CSV.
 - A sortable table with numeric temperature sorting and calendar date sorting.
 - Clear empty results, invalid-date feedback, reset, and demo reload controls.
 - Keyboard-accessible standard controls and a scrollable layout for smaller windows.
@@ -43,11 +46,44 @@ matching locations. When All cities is selected, summaries and the table include
 all matches, while the chart asks you to select a city rather than connecting
 unrelated locations into one trend.
 
-The chart displays raw source readings. Lines connect observations and do not
-imply data exists for missing dates. Duplicate source readings are retained; no
-daily/monthly aggregation is applied. For large selections the chart shows the
-first 1,000 matching readings and displays that limit explicitly. The table and
-summary cards continue to include every matching record.
+### Compare and aggregate
+
+Select a primary city, choose up to two additional cities under **Compare with**,
+then click **Compare cities** (or **Apply filters**). City choices respect the region
+and country filters. To compare countries, leave Country set to All countries;
+for comparisons across regions, also choose All regions. Repeated selections are
+counted once, and every city uses the same inclusive date range.
+
+The resolution selector changes the chart immediately. Cards and the table always
+summarize the selected **raw source readings**. Their combined mean is weighted by
+source records, not equally by city. Period means are also calculated directly from
+source records, not by averaging monthly means into yearly values.
+
+Missing dates and periods are not filled with zero. Duplicate source records remain
+part of the averages and counts. A date filter can select only part of a month or
+year; that bucket uses only the included readings. Period start/end labels identify
+the calendar bucket, not a guarantee that every date in that bucket was observed.
+Raw/daily charts use actual day spacing; monthly/yearly charts use calendar periods.
+
+The plot shows at most the first 1,000 points **per city**, with an explicit notice
+when limited. Table rows, summary cards, and exports still include all matching data.
+
+### Export CSV
+
+Use **Export CSV** above the table:
+
+- **Filtered readings** exports every displayed raw row in the table's current sort
+  order using the input CSV schema, so the file can be imported back into WorldTemps.
+- **Chart data** exports all selected series at the current resolution, including
+  points beyond the plot limit. Columns are Country, State, City, Resolution,
+  PeriodStart, PeriodEnd, AverageTemperatureF, MinimumTemperatureF,
+  MaximumTemperatureF, and ReadingCount. This analysis format is distinct from the
+  raw import format.
+
+Exports use UTF-8, ISO dates for chart periods, decimal points independent of system
+locale, and standard CSV quoting. Files are written in the background to a temporary
+file and replaced only after the complete write succeeds. Failed exports show an
+error and preserve the dashboard view.
 
 ## Console interface
 
@@ -95,6 +131,8 @@ the header as record 1, not physical lines when quoted fields contain newlines.
 | `importer/CsvTemperatureLoader` | CSV parsing and validation diagnostics |
 | `service/TemperatureData` | Core extrema and city-history queries |
 | `service/DashboardQuery` | Shared filters, location options, and summary calculations |
+| `service/TemperatureAnalysis` | Per-city daily, monthly, and yearly aggregation |
+| `exporter/CsvExporter` | Raw and analysis CSV exports |
 | `ui/DashboardView` | JavaFX controls, presentation, and background import orchestration |
 | `ui/TemperatureDashboard` | Desktop application lifecycle |
 | `WorldTemps` | Console entry point |
@@ -108,10 +146,10 @@ claims. The original coursework remains available in Git history.
 ## Validation
 
 ```sh
-# 38 unit and console regression tests; no graphical session required
+# 52 unit and console regression tests; no graphical session required
 mvn clean verify
 
-# Plus 7 integration tests against real JavaFX controls; requires a display
+# Plus 10 integration tests against real JavaFX controls; requires a display
 mvn -Pui-tests clean verify
 
 # Linux CI / headless desktop environment
@@ -119,15 +157,19 @@ xvfb-run -a mvn -Pui-tests clean verify
 ```
 
 The UI tests exercise filter/card/chart/table consistency, date validation, reset,
-empty matches, numeric sorting, import recovery, and layout. They also fail on
-uncaught JavaFX application-thread errors. A screenshot of the running dashboard
-is generated at `target/ui/dashboard.png`. GitHub Actions builds the app, smoke
+empty matches, sorting, import recovery, multi-city comparisons, resolution changes,
+export success/failure, and layout. Unit tests also verify leap years, year
+boundaries, weighted means, partial periods, quoted Unicode CSV round trips, and
+failed destination cleanup. They also fail on
+uncaught JavaFX application-thread errors. Screenshots of the running dashboard
+and city comparisons are generated in `target/ui/`. GitHub Actions builds the app, smoke
 tests the console JAR, runs JavaFX tests under Xvfb, and uploads the preview.
 
 Linux desktops need GTK 3 and X11 libraries. On Ubuntu 24.04, install
 `libgtk-3-0t64 libxtst6`; headless tests also require `xvfb`.
 
-## Next milestone
+## Remaining work
 
-Pending approval: city comparisons, monthly/yearly aggregation, CSV export, and
-measured improvements for larger datasets. These features are not implemented yet.
+Pending approval: measured performance improvements for larger datasets, desktop
+release packaging, and final resume/demo polish. No performance benchmark claims
+or native installer are included in this milestone.

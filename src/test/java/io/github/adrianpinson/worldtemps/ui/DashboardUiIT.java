@@ -2,6 +2,8 @@ package io.github.adrianpinson.worldtemps.ui;
 
 import io.github.adrianpinson.worldtemps.model.Reading;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Location;
+import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis.Resolution;
+import io.github.adrianpinson.worldtemps.importer.CsvTemperatureLoader;
 import java.awt.image.BufferedImage;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -189,6 +191,96 @@ class DashboardUiIT {
             assertFalse(label("count-value").getText().isBlank());
             return null;
         });
+    }
+
+    @Test void comparesThreeCitiesAndChangesAggregationWithoutChangingRawCounts() throws Exception {
+        fx(() -> {
+            chooseComparison("comparison-a", "London");
+            chooseComparison("comparison-b", "Tokyo");
+            button("compare-cities").fire();
+            assertEquals("270", label("count-value").getText());
+            assertEquals(270, table().getItems().size());
+            assertEquals(3, chart().getData().size());
+            assertEquals(270, chart().getData().stream().mapToInt(s -> s.getData().size()).sum());
+            DashboardUiIT.this.<Resolution>combo("chart-resolution").setValue(Resolution.MONTHLY);
+            assertEquals(9, chart().getData().stream().mapToInt(s -> s.getData().size()).sum());
+            var monthly = chart().getData().get(0).getData();
+            assertEquals(1, monthly.get(1).getXValue().longValue() - monthly.get(0).getXValue().longValue());
+            var axis = (javafx.scene.chart.NumberAxis) chart().getXAxis();
+            assertEquals(monthly.get(0).getXValue().doubleValue(), axis.getLowerBound());
+            assertEquals(monthly.get(monthly.size() - 1).getXValue().doubleValue(), axis.getUpperBound());
+            assertEquals("", axis.getTickLabelFormatter().toString(monthly.get(0).getXValue().doubleValue() - 0.2));
+            assertEquals("270", label("count-value").getText());
+            capture("comparison-analytics.png");
+            DashboardUiIT.this.<Resolution>combo("chart-resolution").setValue(Resolution.YEARLY);
+            assertEquals(3, chart().getData().stream().mapToInt(s -> s.getData().size()).sum());
+            assertEquals(2025, chart().getData().get(0).getData().get(0).getXValue().intValue());
+            assertEquals("2025", axis.getTickLabelFormatter().toString(2025));
+            return null;
+        });
+    }
+
+    @Test void comparisonDuplicatesDoNotInflateDataAndGeographicChangesClearInvalidChoices() throws Exception {
+        fx(() -> {
+            chooseComparison("comparison-a", "London");
+            chooseComparison("comparison-b", "London");
+            button("compare-cities").fire();
+            assertEquals("180", label("count-value").getText());
+            assertEquals(2, chart().getData().size());
+            combo("country-filter").setValue("UK");
+            button("apply-filters").fire();
+            assertEquals("90", label("count-value").getText());
+            assertTrue(chart().getData().isEmpty());
+            assertNull(combo("comparison-a").getValue());
+            assertNull(combo("comparison-b").getValue());
+            return null;
+        });
+    }
+
+    @Test void exportsTheDisplayedReadingsAndCompleteAggregatedChartAndRecoversFromWriteFailure() throws Exception {
+        fx(() -> {
+            chooseComparison("comparison-a", "London");
+            button("compare-cities").fire();
+            DashboardUiIT.this.<Resolution>combo("chart-resolution").setValue(Resolution.MONTHLY);
+            return null;
+        });
+        Path raw = temporary.resolve("raw.csv");
+        fx(() -> view.exportReadings(raw)).get(15, TimeUnit.SECONDS);
+        var imported = new CsvTemperatureLoader().load(Files.newBufferedReader(raw));
+        assertEquals(180, imported.data().size());
+        Path chartData = temporary.resolve("chart.csv");
+        fx(() -> view.exportChartData(chartData)).get(15, TimeUnit.SECONDS);
+        assertEquals(7, Files.readAllLines(chartData).size());
+        assertTrue(Files.readString(chartData).contains("MONTHLY"));
+        var failed = fx(() -> view.exportReadings(temporary.resolve("missing-directory/output.csv")));
+        assertThrows(java.util.concurrent.ExecutionException.class, () -> failed.get(15, TimeUnit.SECONDS));
+        fx(() -> {
+            assertTrue(label("filter-feedback").getText().contains("Export failed"));
+            assertEquals("180", label("count-value").getText());
+            assertFalse(button("import-csv").isDisabled());
+            return null;
+        });
+    }
+
+    private void chooseComparison(String id, String name) {
+        ComboBox<Location> choices = combo(id);
+        choices.setValue(choices.getItems().stream().filter(java.util.Objects::nonNull)
+                .filter(location -> location.city().equals(name)).findFirst().orElseThrow());
+    }
+
+    private void capture(String filename) throws Exception {
+        view.applyCss();
+        view.layout();
+        WritableImage snapshot = view.snapshot(null, null);
+        BufferedImage image = new BufferedImage((int) snapshot.getWidth(), (int) snapshot.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                image.setRGB(x, y, snapshot.getPixelReader().getArgb(x, y));
+            }
+        }
+        Path output = Path.of("target/ui/" + filename);
+        Files.createDirectories(output.getParent());
+        ImageIO.write(image, "png", output.toFile());
     }
 
     private Label label(String id) { return (Label) view.lookup("#" + id); }

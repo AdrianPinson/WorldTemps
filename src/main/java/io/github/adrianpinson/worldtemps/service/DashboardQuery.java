@@ -39,10 +39,24 @@ public final class DashboardQuery {
     }
 
     public Result apply(Filter filter) {
+        return apply(filter, List.of());
+    }
+
+    /** Comparison cities share the primary selection's geography and date bounds. */
+    public Result apply(Filter filter, List<Location> comparisons) {
         Objects.requireNonNull(filter);
+        Objects.requireNonNull(comparisons);
+        if (filter.location() == null && !comparisons.isEmpty()) {
+            throw new IllegalArgumentException("Select a primary city before adding comparisons.");
+        }
+        List<Location> locations = java.util.stream.Stream.concat(
+                java.util.stream.Stream.ofNullable(filter.location()), comparisons.stream()).distinct().toList();
+        if (locations.size() > 3 || locations.contains(null)) {
+            throw new IllegalArgumentException("Choose up to three valid cities.");
+        }
         List<Reading> selected = readings.stream()
                 .filter(r -> matches(r.region(), filter.region()) && matches(r.country(), filter.country()))
-                .filter(r -> filter.location() == null || filter.location().matches(r))
+                .filter(r -> locations.isEmpty() || locations.stream().anyMatch(location -> location.matches(r)))
                 .filter(r -> filter.from() == null || !r.date().isBefore(filter.from()))
                 .filter(r -> filter.to() == null || !r.date().isAfter(filter.to()))
                 .sorted(Comparator.comparing(Reading::date).thenComparing(Reading::city)

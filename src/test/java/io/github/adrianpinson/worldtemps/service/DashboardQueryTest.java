@@ -60,6 +60,26 @@ class DashboardQueryTest {
         assertThrows(IllegalArgumentException.class, () -> new Filter(null, null, null, day.plusDays(1), day));
     }
 
+    @Test void comparisonsUseOneDateRangeAndDeduplicateSelectedCities() {
+        var result = query.apply(new Filter(null, null, Location.of(london), day, day),
+                List.of(Location.of(canada), Location.of(london), Location.of(canada)));
+        assertEquals(2, result.readings().size());
+        assertEquals(2, result.summary().orElseThrow().cities());
+        assertEquals(15, result.summary().orElseThrow().average());
+    }
+
+    @Test void comparisonsRespectTheRegionAndCountryFilters() {
+        var result = query.apply(new Filter("Europe", "UK", Location.of(london), null, null), List.of(Location.of(canada)));
+        assertEquals(2, result.readings().size());
+        assertTrue(result.readings().stream().allMatch(r -> r.country().equals("UK")));
+    }
+
+    @Test void comparisonRequiresPrimaryCityAndAtMostThreeDistinctLocations() {
+        assertThrows(IllegalArgumentException.class, () -> query.apply(new Filter(null, null, null, null, null), List.of(Location.of(canada))));
+        assertThrows(IllegalArgumentException.class, () -> query.apply(new Filter(null, null, Location.of(london), null, null),
+                List.of(Location.of(canada), new Location("US", "Texas", "Longview"), new Location("Japan", "", "Tokyo"))));
+    }
+
     @Test void differentStatesDoNotMergeAndDuplicatesRemainSourceRecords() {
         Reading ohio = new Reading("North America", "US", "Ohio", "London", day, 80);
         Reading kentucky = new Reading("North America", "US", "Kentucky", "London", day, 70);
