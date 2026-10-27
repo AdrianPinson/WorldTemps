@@ -677,17 +677,18 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         setBusy(true);
         feedback.setVisible(false);
         status.setText("Loading historical weather…");
-        Task<OpenMeteoClient.Dataset> task = new Task<>() {
-            @Override protected OpenMeteoClient.Dataset call() throws Exception {
-                return weatherClient.load(selection, start, end);
+        Task<PreparedWeather> task = new Task<>() {
+            @Override protected PreparedWeather call() throws Exception {
+                OpenMeteoClient.Dataset data = weatherClient.load(selection, start, end);
+                return new PreparedWeather(data, new DashboardQuery(new TemperatureData(data.readings())));
             }
         };
         task.setOnSucceeded(e -> {
             setBusy(false);
             if (closed) { completion.cancel(false); return; }
-            lastWeather = task.getValue();
+            lastWeather = task.getValue().data();
             lastImport = null;
-            query = new DashboardQuery(new TemperatureData(lastWeather.readings()));
+            query = task.getValue().query();
             filterContent.setDisable(false);
             source.setText("Open-Meteo / ERA5");
             long offline = lastWeather.cities().stream().filter(c -> c.origin() == OpenMeteoClient.Origin.OFFLINE_CACHE).count();
@@ -734,14 +735,14 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         setBusy(true);
         feedback.setVisible(false);
         status.setText("Loading " + name + "…");
-        Task<ImportResult> task = new Task<>() {
-            @Override protected ImportResult call() throws IOException {
+        Task<PreparedImport> task = new Task<>() {
+            @Override protected PreparedImport call() throws IOException {
                 try (Reader input = reader.open()) {
                     ImportResult result = new CsvTemperatureLoader().load(input);
                     if (result.data().size() == 0) {
                         throw new IOException("No valid readings were found. Check the CSV values and try again.");
                     }
-                    return result;
+                    return new PreparedImport(result, new DashboardQuery(result.data()));
                 }
             }
         };
@@ -751,11 +752,11 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                 completion.cancel(false);
                 return;
             }
-            lastImport = task.getValue();
+            lastImport = task.getValue().data();
             lastWeather = null;
             attribution.setVisible(false);
             details.setText("Import details");
-            query = new DashboardQuery(lastImport.data());
+            query = task.getValue().query();
             filterContent.setDisable(false);
             source.setText(name);
             sourceHint.setText(synthetic ? "Synthetic demo · not historical observations."
@@ -918,4 +919,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     @FunctionalInterface private interface ReaderSource {
         Reader open() throws IOException;
     }
+
+    private record PreparedImport(ImportResult data, DashboardQuery query) { }
+    private record PreparedWeather(OpenMeteoClient.Dataset data, DashboardQuery query) { }
 }

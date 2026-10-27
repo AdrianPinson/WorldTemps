@@ -2,47 +2,55 @@ package io.github.adrianpinson.worldtemps.service;
 
 import io.github.adrianpinson.worldtemps.model.Reading;
 import java.time.LocalDate;
-import java.util.Comparator;
-import java.util.DoubleSummaryStatistics;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 
-/** Shared filtering and summaries for the dashboard, without a JavaFX dependency. */
+/** Immutable chronological and location indexes shared by dashboard queries. */
 public final class DashboardQuery {
+    private static final Comparator<Reading> ORDER = Comparator.comparing(Reading::date)
+            .thenComparing(Reading::city).thenComparing(Reading::country).thenComparing(Reading::state);
+    private static final Comparator<Location> LOCATION_ORDER = Comparator.comparing(Location::country, String.CASE_INSENSITIVE_ORDER)
+            .thenComparing(Location::state, String.CASE_INSENSITIVE_ORDER).thenComparing(Location::city, String.CASE_INSENSITIVE_ORDER);
     private final List<Reading> readings;
+    private final Map<Location, List<Reading>> byLocation;
+    private final List<GeoOption> options;
+    private final List<String> regions;
 
     public DashboardQuery(TemperatureData data) {
-        readings = Objects.requireNonNull(data).readings();
+        List<Reading> source = Objects.requireNonNull(data).readings();
+        options = source.stream().map(r -> new GeoOption(r.region(), Location.of(r))).distinct().toList();
+        regions = options.stream().map(GeoOption::region).distinct().sorted().toList();
+        readings = source.stream().sorted(ORDER).toList();
+        Map<Location, List<Reading>> index = new TreeMap<>(LOCATION_ORDER);
+        for (Reading reading : readings) {
+            index.computeIfAbsent(Location.of(reading), key -> new ArrayList<>()).add(reading);
+        }
+        index.replaceAll((location, values) -> List.copyOf(values));
+        byLocation = Collections.unmodifiableMap(index);
     }
 
-    public List<String> regions() {
-        return readings.stream().map(Reading::region).distinct().sorted().toList();
-    }
+    public List<String> regions() { return regions; }
 
     public List<String> countries(String region) {
-        return readings.stream().filter(r -> matches(r.region(), region))
-                .map(Reading::country).distinct().sorted().toList();
+        return options.stream().filter(option -> matches(option.region(), region))
+                .map(option -> option.location().country()).distinct().sorted().toList();
     }
 
     public List<Location> locations(String region, String country) {
-        return readings.stream().filter(r -> matches(r.region(), region) && matches(r.country(), country))
-                .map(Location::of).distinct().sorted(Comparator.comparing(Location::toString)).toList();
+        return options.stream().filter(option -> matches(option.region(), region) && matches(option.location().country(), country))
+                .map(GeoOption::location).distinct().sorted(Comparator.comparing(Location::toString)).toList();
     }
 
     public Optional<LocalDate> firstDate() {
-        return readings.stream().map(Reading::date).min(Comparator.naturalOrder());
+        return readings.isEmpty() ? Optional.empty() : Optional.of(readings.get(0).date());
     }
 
     public Optional<LocalDate> lastDate() {
-        return readings.stream().map(Reading::date).max(Comparator.naturalOrder());
+        return readings.isEmpty() ? Optional.empty() : Optional.of(readings.get(readings.size() - 1).date());
     }
 
-    public Result apply(Filter filter) {
-        return apply(filter, List.of());
-    }
+    public Result apply(Filter filter) { return apply(filter, List.of()); }
 
-    /** Comparison cities share the primary selection's geography and date bounds. */
+    /** Geography and inclusive date bounds apply to all selected cities. */
     public Result apply(Filter filter, List<Location> comparisons) {
         Objects.requireNonNull(filter);
         Objects.requireNonNull(comparisons);
@@ -54,20 +62,64 @@ public final class DashboardQuery {
         if (locations.size() > 3 || locations.contains(null)) {
             throw new IllegalArgumentException("Choose up to three valid cities.");
         }
-        List<Reading> selected = readings.stream()
-                .filter(r -> matches(r.region(), filter.region()) && matches(r.country(), filter.country()))
-                .filter(r -> locations.isEmpty() || locations.stream().anyMatch(location -> location.matches(r)))
-                .filter(r -> filter.from() == null || !r.date().isBefore(filter.from()))
-                .filter(r -> filter.to() == null || !r.date().isAfter(filter.to()))
-                .sorted(Comparator.comparing(Reading::date).thenComparing(Reading::city)
-                        .thenComparing(Reading::country).thenComparing(Reading::state))
-                .toList();
-        if (selected.isEmpty()) {
-            return new Result(selected, Optional.empty());
+        List<Reading> selected = new ArrayList<>();
+        if (locations.isEmpty()) {
+            for (Reading reading : range(readings, filter.from(), filter.to())) {
+                if (geographyMatches(reading, filter)) { selected.add(reading); }
+            }
+        } else {
+            // At most three already-sorted ranges: merge without sorting the result again.
+            PriorityQueue<Cursor> queue = new PriorityQueue<>(Comparator.comparing(Cursor::current, ORDER));
+            Set<List<Reading>> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (Location location : locations) {
+                List<Reading> bucket = byLocation.get(location);
+                if (bucket != null && visited.add(bucket)) {
+                    List<Reading> slice = range(bucket, filter.from(), filter.to());
+                    if (!slice.isEmpty()) { queue.add(new Cursor(slice)); }
+                }
+            }
+            while (!queue.isEmpty()) {
+                Cursor cursor = queue.remove();
+                if (geographyMatches(cursor.current(), filter)) { selected.add(cursor.current()); }
+                if (cursor.advance()) { queue.add(cursor); }
+            }
         }
+        if (selected.isEmpty()) { return new Result(selected, Optional.empty()); }
         DoubleSummaryStatistics stats = selected.stream().mapToDouble(Reading::averageTemperatureF).summaryStatistics();
         return new Result(selected, Optional.of(new Summary(stats.getMin(), stats.getMax(), stats.getAverage(),
                 selected.size(), selected.stream().map(Location::of).distinct().count())));
+    }
+
+    private static boolean geographyMatches(Reading reading, Filter filter) {
+        return matches(reading.region(), filter.region()) && matches(reading.country(), filter.country());
+    }
+
+    private static List<Reading> range(List<Reading> rows, LocalDate from, LocalDate to) {
+        int start = from == null ? 0 : bound(rows, from, false);
+        int end = to == null ? rows.size() : bound(rows, to, true);
+        return rows.subList(start, end);
+    }
+
+    /** lower_bound for the first day; upper_bound for the inclusive final day. */
+    private static int bound(List<Reading> rows, LocalDate date, boolean upper) {
+        int low = 0;
+        int high = rows.size();
+        while (low < high) {
+            int middle = (low + high) >>> 1;
+            int comparison = rows.get(middle).date().compareTo(date);
+            if (comparison < 0 || (upper && comparison == 0)) { low = middle + 1; }
+            else { high = middle; }
+        }
+        return low;
+    }
+
+    private record GeoOption(String region, Location location) { }
+    private static final class Cursor {
+        private final List<Reading> rows;
+        private int index;
+        private Cursor(List<Reading> rows) { this.rows = rows; }
+        private Reading current() { return rows.get(index); }
+        private boolean advance() { return ++index < rows.size(); }
     }
 
     private static boolean matches(String value, String filter) {
