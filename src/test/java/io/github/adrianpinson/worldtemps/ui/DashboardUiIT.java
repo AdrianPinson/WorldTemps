@@ -418,6 +418,42 @@ class DashboardUiIT {
         fx(() -> { button("reset-zoom").fire(); assertEquals(90,chart().getData().get(0).getData().size()); return null; });
     }
 
+    @Test void workspaceRestoresComparisonsZoomAndSyntheticProvenanceOffline() throws Exception {
+        Path saved=temporary.resolve("portable.worldtemps");
+        fx(() -> {
+            chooseComparison("comparison-a","London");chooseComparison("comparison-b","Tokyo");button("compare-cities").fire();
+            DashboardUiIT.this.<Resolution>combo("chart-resolution").setValue(Resolution.MONTHLY);
+            date("chart-from").setValue(LocalDate.of(2025,2,1));date("chart-to").setValue(LocalDate.of(2025,2,28));button("zoom-chart").fire();
+            return view.saveWorkspace(saved);
+        }).get(15,TimeUnit.SECONDS);
+        fx(() -> view.loadDemo()).get(15,TimeUnit.SECONDS);
+        fx(() -> view.openWorkspace(saved)).get(15,TimeUnit.SECONDS);
+        fx(() -> {
+            assertEquals("270",label("count-value").getText());assertEquals(270,table().getItems().size());
+            assertEquals(Resolution.MONTHLY,combo("chart-resolution").getValue());assertEquals(3,chart().getData().size());
+            assertEquals(3,chart().getData().stream().mapToInt(series->series.getData().size()).sum());
+            assertEquals(LocalDate.of(2025,2,1),date("chart-from").getValue());
+            assertEquals("SAVED SYNTHETIC",label("source-badge").getText());
+            assertTrue(label("source-hint").getText().contains("not refreshed"));return null;
+        });
+        Files.writeString(saved,"{broken}");
+        assertThrows(java.util.concurrent.ExecutionException.class,()->fx(() -> view.openWorkspace(saved)).get(15,TimeUnit.SECONDS));
+        fx(() -> {assertEquals("270",label("count-value").getText());assertEquals(3,chart().getData().size());return null;});
+    }
+
+    @Test void weatherWorkspaceRetainsProvenanceWithoutAnotherNetworkRequest() throws Exception {
+        var calls=new java.util.concurrent.atomic.AtomicInteger();
+        var client=new OpenMeteoClient(uri->{calls.incrementAndGet();return DAILY;}, new WeatherCache(temporary.resolve("workspace-cache")),CLOCK);
+        fx(() -> {view.close();view=new DashboardView(client);stage.getScene().setRoot(view);return view.loadWeather(java.util.List.of(LONGVIEW),LocalDate.of(2025,1,1),LocalDate.of(2025,1,3));}).get(15,TimeUnit.SECONDS);
+        Path saved=temporary.resolve("weather.worldtemps");
+        fx(() -> view.saveWorkspace(saved)).get(15,TimeUnit.SECONDS);
+        var document=io.github.adrianpinson.worldtemps.workspace.WorkspaceStore.load(saved);
+        assertEquals("WEATHER",document.source().kind());assertTrue(document.source().details().contains("Coordinates:"));
+        assertTrue(document.source().details().contains("Fetched:"));assertTrue(document.source().details().contains("CC BY 4.0"));
+        int before=calls.get();fx(() -> view.openWorkspace(saved)).get(15,TimeUnit.SECONDS);assertEquals(before,calls.get());
+        fx(() -> {assertEquals("SAVED WEATHER",label("source-badge").getText());assertEquals("3",label("count-value").getText());return null;});
+    }
+
     private void capture(String filename) throws Exception {
         view.applyCss();
         view.layout();
