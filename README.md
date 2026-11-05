@@ -280,3 +280,15 @@ package checks in CI and still benefit from manual visual testing.
 See the [release guide](docs/release.md), [version notes](docs/release-notes.md),
 and [demo/interview guide](docs/demo-guide.md). The latter includes resume wording
 and the architecture/tradeoffs to be ready to explain.
+
+## Monthly temperature anomalies
+
+Choose a primary city and **Analyze anomalies**. Set an inclusive baseline year range
+and a target year outside that range, then calculate. This uses all loaded dates for
+that city, independently of dashboard date filters, and makes no additional API requests.
+Load or import both periods before analyzing; the offline demo contains only one year.
+Duplicate records are averaged once per date. Each observed baseline year's monthly
+mean has equal weight; the anomaly is the target month's daily mean minus that baseline.
+Every month reports observed/expected days and observed baseline years, including leap days.
+Unavailable values stay blank. Partial coverage is explicit and is not a claim of a complete
+30-year climate normal. Results are descriptive comparisons, not forecasts or causal attribution.
