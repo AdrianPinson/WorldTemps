@@ -14,6 +14,7 @@ import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis.Resolution;
 import io.github.adrianpinson.worldtemps.service.TemperatureData;
 import io.github.adrianpinson.worldtemps.weather.OpenMeteoClient;
 import io.github.adrianpinson.worldtemps.weather.WeatherLocation;
+import io.github.adrianpinson.worldtemps.workspace.WorkspaceStore;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -80,6 +81,10 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private final Label attribution = new Label("Weather: Open-Meteo / ECMWF ERA5 (CC BY 4.0) · Location data: GeoNames");
     private final Button details = new Button("Import details");
     private final Label feedback = new Label();
+    private final MenuButton workspaces = new MenuButton("Workspaces");
+    private final MenuItem saveWorkspace = new MenuItem("Save workspace…");
+    private final MenuItem openWorkspace = new MenuItem("Open workspace…");
+    private WorkspaceStore.Source restoredSource;
     private final Label source = new Label("No dataset loaded");
     private final Label sourceHint = new Label("Import a CSV or explore the sample.");
     private final Label sourceBadge = new Label("NO DATA");
@@ -190,7 +195,10 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         details.getStyleClass().add("sidebar-link");
         details.setDisable(true);
         details.setMaxWidth(Double.MAX_VALUE);
-        VBox sourcePanel = new VBox(8, label("DATA SOURCE", "eyebrow-light"), source, sourceHint, details);
+        workspaces.setId("workspaces"); workspaces.setMaxWidth(Double.MAX_VALUE);
+        workspaces.getStyleClass().add("secondary-button");
+        workspaces.getItems().addAll(saveWorkspace, openWorkspace); saveWorkspace.setDisable(true);
+        VBox sourcePanel = new VBox(8, label("DATA SOURCE", "eyebrow-light"), source, sourceHint, details, workspaces);
         sourcePanel.getStyleClass().add("source-panel");
         sidebar.getChildren().addAll(brandBlock, active, filterScroll, sourcePanel);
         filterContent.setDisable(true);
@@ -454,6 +462,8 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
             }
         });
         details.setOnAction(e -> showImportDetails());
+        saveWorkspace.setOnAction(event -> chooseWorkspace(true));
+        openWorkspace.setOnAction(event -> chooseWorkspace(false));
     }
 
     private void updateLocations() {
@@ -613,6 +623,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
 
     private void refreshExportState() {
         zoomChart.setDisable(busy || query == null); resetZoom.setDisable(busy || query == null);
+        saveWorkspace.setDisable(busy || query == null); workspaces.setDisable(busy);
         exportReadings.setDisable(currentResult == null || currentResult.readings().isEmpty());
         exportChart.setDisable(currentSeries.isEmpty());
         exportCsv.setDisable(busy || currentResult == null || currentResult.readings().isEmpty());
@@ -731,6 +742,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         task.setOnSucceeded(e -> {
             setBusy(false);
             if (closed) { completion.cancel(false); return; }
+            restoredSource = null;
             lastWeather = task.getValue().data();
             lastImport = null;
             query = task.getValue().query();
@@ -772,6 +784,76 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         return completion;
     }
 
+    private void chooseWorkspace(boolean save) {
+        FileChooser chooser = new FileChooser(); chooser.setTitle(save ? "Save analysis workspace" : "Open analysis workspace");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("WorldTemps workspace", "*.worldtemps"));
+        chooser.setInitialFileName("analysis.worldtemps");
+        var file = save ? chooser.showSaveDialog(getScene().getWindow()) : chooser.showOpenDialog(getScene().getWindow());
+        if (file != null) { if (save) saveWorkspace(file.toPath()); else openWorkspace(file.toPath()); }
+    }
+
+    public CompletableFuture<Void> saveWorkspace(Path path) {
+        if (query == null || busy || closed) return CompletableFuture.failedFuture(new IllegalStateException("Load data and finish the current operation first."));
+        try {
+            from.commitValue(); to.commitValue(); chartFrom.commitValue(); chartTo.commitValue();
+            List<Location> cities = city.getValue() == null ? List.of() : java.util.stream.Stream.of(city.getValue(), comparisonA.getValue(), comparisonB.getValue()).filter(Objects::nonNull).distinct().toList();
+            var settings = new WorkspaceStore.Settings(Objects.requireNonNullElse(selectedRegion(), ""), Objects.requireNonNullElse(selectedCountry(), ""), cities,
+                    WorkspaceStore.text(from.getValue()), WorkspaceStore.text(to.getValue()), resolution.getValue(),
+                    WorkspaceStore.text(zoomFrom), WorkspaceStore.text(zoomTo));
+            settings.validate(query);
+            DashboardQuery data = query;
+            var origin = restoredSource != null ? restoredSource : new WorkspaceStore.Source(lastWeather != null ? "WEATHER" : sourceBadge.getText().equals("DEMO DATA") ? "SYNTHETIC" : "CSV", source.getText(), sourceDetailsText());
+            return export(path, () -> {
+                var rows = data.apply(new Filter(null,null,null,null,null)).readings().stream().map(WorkspaceStore.Row::of).toList();
+                WorkspaceStore.save(path, new WorkspaceStore.Document(1, rows, settings, origin));
+            }).thenRun(() -> status.setText("Saved portable workspace " + path.getFileName() + " · All loaded data and analysis settings"));
+        } catch (RuntimeException invalid) { error("Workspace save failed: " + invalid.getMessage()); return CompletableFuture.failedFuture(invalid); }
+    }
+
+    public CompletableFuture<Void> openWorkspace(Path path) {
+        if (busy || closed) return CompletableFuture.failedFuture(new IllegalStateException("Finish the current operation first."));
+        CompletableFuture<Void> completion = new CompletableFuture<>();
+        setBusy(true); feedback.setVisible(false); status.setText("Opening workspace…");
+        Task<PreparedWorkspace> task = new Task<>() {
+            @Override protected PreparedWorkspace call() throws Exception {
+                var document = WorkspaceStore.load(path);
+                var data = new DashboardQuery(new TemperatureData(document.data()));
+                document.settings().validate(data);
+                return new PreparedWorkspace(document,data);
+            }
+        };
+        task.setOnSucceeded(event -> {
+            setBusy(false);
+            if (closed) { completion.cancel(false); return; }
+            var document = task.getValue().document(); var saved = document.settings();
+            query = task.getValue().query(); restoredSource = document.source(); lastImport = null; lastWeather = null;
+            source.setText(document.source().label()); sourceHint.setText("Saved snapshot · " + document.source().kind() + " · Original source was not refreshed");
+            sourceBadge.setText("SAVED " + document.source().kind()); details.setText("Source details"); details.setDisable(false);
+            attribution.setVisible(document.source().kind().equals("WEATHER"));
+            resetFilters(false); updating=true;
+            region.setValue(saved.region().isEmpty() ? ALL_REGIONS : saved.region());
+            country.getItems().setAll(query.countries(selectedRegion())); country.getItems().add(0,ALL_COUNTRIES);
+            country.setValue(saved.country().isEmpty() ? ALL_COUNTRIES : saved.country()); updateLocations();
+            city.setValue(saved.cities().isEmpty() ? null : saved.cities().get(0));
+            comparisonA.setValue(saved.cities().size()>1 ? saved.cities().get(1) : null);
+            comparisonB.setValue(saved.cities().size()>2 ? saved.cities().get(2) : null);
+            resolution.setValue(saved.resolution()); from.setValue(WorkspaceStore.date(saved.from())); to.setValue(WorkspaceStore.date(saved.to()));
+            from.getEditor().setText(from.getConverter().toString(from.getValue())); to.getEditor().setText(to.getConverter().toString(to.getValue()));
+            updating=false; applyFilters();
+            zoomFrom=WorkspaceStore.date(saved.chartFrom()); zoomTo=WorkspaceStore.date(saved.chartTo());
+            chartFrom.setValue(zoomFrom); chartTo.setValue(zoomTo); renderChart(currentResult.readings(),selectedCities);
+            filterContent.setDisable(false); comparisonControls.setDisable(city.getValue()==null);
+            status.setText("Opened saved workspace " + path.getFileName() + " · Snapshot data, no network request");
+            completion.complete(null);
+        });
+        task.setOnFailed(event -> {
+            setBusy(false); if (!closed) { error("Workspace could not be opened: " + task.getException().getMessage()); status.setText("Workspace load failed · Previous dataset retained"); }
+            completion.completeExceptionally(task.getException());
+        });
+        imports.submit(task); return completion;
+    }
+    private record PreparedWorkspace(WorkspaceStore.Document document, DashboardQuery query) { }
+
     private CompletableFuture<Void> load(ReaderSource reader, String name, boolean synthetic) {
         if (closed || busy) {
             return CompletableFuture.failedFuture(new IllegalStateException("An import is already running or the dashboard is closed."));
@@ -797,6 +879,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                 completion.cancel(false);
                 return;
             }
+            restoredSource = null;
             lastImport = task.getValue().data();
             lastWeather = null;
             attribution.setVisible(false);
@@ -847,7 +930,10 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         feedback.setVisible(true);
     }
 
-    private void showImportDetails() {
+    private void showImportDetails() { showDetails("Source details", sourceDetailsText()); }
+
+    private String sourceDetailsText() {
+        if (restoredSource != null) return "Saved snapshot · not refreshed from the original source.\n\n" + restoredSource.details();
         if (lastWeather != null) {
             StringBuilder text = new StringBuilder("Historical daily mean temperatures, not station observations or forecasts.\n"
                     + "Source: Open-Meteo / ECMWF ERA5 reanalysis, CC BY 4.0.\n"
@@ -858,12 +944,9 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                     .append("\nTimezone: ").append(city.location().timezone()).append("\nOrigin: ").append(city.origin())
                     .append("\nFetched: ").append(city.fetchedAt()).append("\nUnavailable days: ").append(city.missingDays())
                     .append(city.cacheSaved() ? "" : "\nCould not save a local cache copy.").append("\n\n"));
-            showDetails("Weather source details", text.toString());
-            return;
+            return text.toString();
         }
-        if (lastImport == null) {
-            return;
-        }
+        if (lastImport == null) return "No source details available.";
         StringBuilder text = new StringBuilder(String.format(Locale.US, "Accepted: %,d%nRejected: %,d%n%n",
                 lastImport.data().size(), lastImport.rejectedRows()));
         lastImport.issues().forEach(issue -> text.append("Record ").append(issue.recordNumber()).append(": ")
@@ -874,7 +957,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         if (lastImport.rejectedRows() == 0) {
             text.append("All records passed import validation.");
         }
-        showDetails("Import details", text.toString());
+        return text.toString();
     }
 
     private void showDetails(String title, String text) {

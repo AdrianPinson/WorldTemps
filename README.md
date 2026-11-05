@@ -296,3 +296,20 @@ mean has equal weight; the anomaly is the target month's daily mean minus that b
 Every month reports observed/expected days and observed baseline years, including leap days.
 Unavailable values stay blank. Partial coverage is explicit and is not a claim of a complete
 30-year climate normal. Results are descriptive comparisons, not forecasts or causal attribution.
+
+## Saved analysis workspaces
+
+Use **Workspaces → Save workspace…** to write a portable `.worldtemps` file. It includes
+all loaded raw readings, source provenance/diagnostics, region/country/city comparisons,
+filter dates, chart resolution, and the applied chart zoom. Reopen it through
+**Workspaces → Open workspace…** to restore the comparison offline without the original
+CSV, cache, or API. This is a saved snapshot: opening never refreshes its source, and
+synthetic data remains labeled synthetic. Weather snapshots retain attribution, coordinates,
+timezone, original fetch times, missing-day counts and cache status in Source details.
+
+The versioned JSON format permits 1–500,000 readings up to 64 MiB. Strict reads reject
+unknown versions/fields, missing fields, invalid dates/values, mismatched selections,
+duplicate keys and trailing content before replacing the dashboard. Writes use temporary
+files and replace the destination only after a complete successful save. Failed opens
+preserve the previous dataset. Snapshot files are user-editable data, not authenticated
+proof of their original source.
