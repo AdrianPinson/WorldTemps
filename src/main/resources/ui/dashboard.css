@@ -105,3 +105,7 @@
 .weather-dialog .list-view { -fx-background-color: #ffffff; -fx-border-color: #dce3e9; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 3; }
 .weather-dialog .list-cell { -fx-background-color: #ffffff; -fx-text-fill: #4c6070; -fx-padding: 7; -fx-font-size: 10px; }
 .weather-dialog .list-cell:filled:selected { -fx-background-color: #fff0e3; -fx-text-fill: #8d502a; }
+
+.chart-date { -fx-background-color: #f5f7f9; -fx-border-color: #dce3e9; -fx-border-radius: 6; -fx-background-radius: 6; -fx-pref-height: 32; }
+.chart-date .text-field { -fx-background-color: transparent; -fx-text-fill: #4c6070; -fx-prompt-text-fill: #7d8f9d; -fx-font-size: 10px; }
+.chart-date .arrow-button { -fx-background-color: transparent; }

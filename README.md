@@ -130,8 +130,12 @@ year; that bucket uses only the included readings. Period start/end labels ident
 the calendar bucket, not a guarantee that every date in that bucket was observed.
 Raw/daily charts use actual day spacing; monthly/yearly charts use calendar periods.
 
-The plot shows at most the first 1,000 points **per city**, with an explicit notice
-when limited. Table rows, summary cards, and exports still include all matching data.
+The plot samples the **entire chart window** to at most 1,000 points per city. An ordered
+min/max envelope preserves the first/last points and each bucket's lowest/highest mean
+values. The notice identifies sampling. Chart-window date controls zoom without changing
+filters, table rows, summaries, or exports; reset zoom returns to the full filtered period.
+Aggregated monthly/yearly points overlapping a zoom boundary retain the whole bucket's
+value. Sampling is a visual envelope, not new observations or a replacement for analysis.
 
 ### Export CSV
 

@@ -9,6 +9,7 @@ import io.github.adrianpinson.worldtemps.service.DashboardQuery.Filter;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Location;
 import io.github.adrianpinson.worldtemps.service.DashboardQuery.Result;
 import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis;
+import io.github.adrianpinson.worldtemps.service.ChartSampling;
 import io.github.adrianpinson.worldtemps.service.TemperatureAnalysis.Resolution;
 import io.github.adrianpinson.worldtemps.service.TemperatureData;
 import io.github.adrianpinson.worldtemps.weather.OpenMeteoClient;
@@ -64,6 +65,11 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private final MenuButton exportCsv = new MenuButton("Export CSV");
     private final MenuItem exportReadings = new MenuItem("Filtered readings…");
     private final MenuItem exportChart = new MenuItem("Chart data…");
+    private final DatePicker chartFrom = new DatePicker();
+    private final DatePicker chartTo = new DatePicker();
+    private LocalDate zoomFrom, zoomTo;
+    private final Button zoomChart = new Button("Zoom chart");
+    private final Button resetZoom = new Button("Reset zoom");
     private final DatePicker from = new DatePicker();
     private final DatePicker to = new DatePicker();
     private final Button apply = new Button("Apply filters");
@@ -303,7 +309,16 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         StackPane plot = new StackPane(chart, chartEmpty);
         chartNote.getStyleClass().add("caption");
         chartNote.setWrapText(true);
-        VBox chartCard = new VBox(8, chartHeader, comparisonControls, plot, chartNote);
+        for (Button button : List.of(anomalies, zoomChart, resetZoom)) button.getStyleClass().add("secondary-button");
+        chartFrom.getStyleClass().add("chart-date"); chartTo.getStyleClass().add("chart-date");
+        chartFrom.setId("chart-from"); chartTo.setId("chart-to");
+        chartFrom.setAccessibleText("Chart start date"); chartTo.setAccessibleText("Chart end date");
+        chartFrom.setPromptText("Start date"); chartTo.setPromptText("End date");
+        chartFrom.setPrefWidth(145); chartTo.setPrefWidth(145);
+        zoomChart.setId("zoom-chart"); resetZoom.setId("reset-zoom");
+        HBox zoomControls = new HBox(8, new Label("Chart window"), chartFrom, chartTo, zoomChart, resetZoom);
+        zoomControls.setAlignment(Pos.CENTER_LEFT);
+        VBox chartCard = new VBox(8, chartHeader, comparisonControls, zoomControls, plot, chartNote);
         chartCard.getStyleClass().add("surface");
 
         buildTable();
@@ -385,6 +400,19 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                 updateLocations();
                 updating = false;
             }
+        });
+        zoomChart.setOnAction(event -> {
+            try {
+                chartFrom.commitValue(); chartTo.commitValue();
+                if (chartFrom.getValue() != null && chartTo.getValue() != null && chartFrom.getValue().isAfter(chartTo.getValue()))
+                    throw new IllegalArgumentException("Chart start must be on or before chart end.");
+                zoomFrom=chartFrom.getValue(); zoomTo=chartTo.getValue();
+                if (currentResult != null) renderChart(currentResult.readings(), selectedCities);
+            } catch (RuntimeException invalid) { chartNote.setText("Enter valid chart dates with start on or before end."); }
+        });
+        resetZoom.setOnAction(event -> {
+            zoomFrom=null; zoomTo=null; chartFrom.setValue(null); chartTo.setValue(null);
+            if (currentResult != null) renderChart(currentResult.readings(), selectedCities);
         });
         apply.setOnAction(e -> applyFilters());
         compare.setOnAction(e -> applyFilters());
@@ -492,6 +520,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
             List<Location> comparisons = java.util.stream.Stream.of(comparisonA.getValue(), comparisonB.getValue())
                     .filter(Objects::nonNull).distinct().toList();
             Result result = query.apply(filter, comparisons);
+            zoomFrom=null; zoomTo=null; chartFrom.setValue(null); chartTo.setValue(null);
             selectedCities = java.util.stream.Stream.concat(java.util.stream.Stream.ofNullable(filter.location()),
                     comparisons.stream()).distinct().toList();
             currentResult = result;
@@ -527,7 +556,11 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         Resolution level = resolution.getValue();
         currentSeries = locations.isEmpty() ? List.of() : TemperatureAnalysis.analyze(readings, level).stream()
                 .sorted(java.util.Comparator.comparingInt(series -> locations.indexOf(series.location()))).toList();
-        boolean visible = !currentSeries.isEmpty();
+        List<TemperatureAnalysis.Series> visibleSeries = currentSeries.stream().map(series ->
+                new TemperatureAnalysis.Series(series.location(), series.resolution(), series.points().stream()
+                        .filter(point -> (zoomFrom == null || !point.end().isBefore(zoomFrom)) && (zoomTo == null || !point.start().isAfter(zoomTo))).toList()))
+                .filter(series -> !series.points().isEmpty()).toList();
+        boolean visible = !visibleSeries.isEmpty();
         chart.setVisible(visible);
         chart.setLegendVisible(currentSeries.size() > 1);
         chartEmpty.setVisible(!visible);
@@ -539,12 +572,13 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
                 ? "Each point is a source reading. Lines connect observations; missing dates are not filled."
                 : "Period means use only filtered source readings, including duplicates. Cards and table stay based on raw readings.");
         refreshExportState();
+        if (zoomFrom != null || zoomTo != null) chartNote.setText("Chart-only date zoom. Table, summaries, and exports still cover the full filter range.");
         if (!visible) {
             return;
         }
-        long start = currentSeries.stream().flatMap(series -> series.points().stream())
+        long start = visibleSeries.stream().flatMap(series -> series.points().stream())
                 .mapToLong(point -> chartPosition(point.start(), level)).min().orElseThrow();
-        long end = currentSeries.stream().flatMap(series -> series.points().stream())
+        long end = visibleSeries.stream().flatMap(series -> series.points().stream())
                 .mapToLong(point -> chartPosition(point.start(), level)).max().orElseThrow();
         dateAxis.setAutoRanging(false);
         double padding = level == Resolution.MONTHLY || level == Resolution.YEARLY ? (start == end ? 1 : 0) : 1;
@@ -552,9 +586,9 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         dateAxis.setUpperBound(end + padding);
         dateAxis.setTickUnit(Math.max(1, Math.ceil((end - start) / 6.0)));
         boolean limited = false;
-        for (TemperatureAnalysis.Series citySeries : currentSeries) {
+        for (TemperatureAnalysis.Series citySeries : visibleSeries) {
             var points = citySeries.points();
-            var plotted = points.subList(0, Math.min(points.size(), MAX_CHART_POINTS));
+            var plotted = ChartSampling.sample(points, MAX_CHART_POINTS);
             limited |= points.size() > MAX_CHART_POINTS;
             XYChart.Series<Number, Number> series = new XYChart.Series<>();
             series.setName(citySeries.location().toString());
@@ -573,11 +607,12 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
             chart.getData().add(series);
         }
         if (limited) {
-            chartNote.setText("Plot limited to the first 1,000 points per city. Narrow the dates for later points; exports include all matching data.");
+            chartNote.setText("Full chart window sampled to at most 1,000 points per city, preserving endpoints and bucket extrema of mean values. Zoom for detail; table, summaries, and exports retain all filtered data.");
         }
     }
 
     private void refreshExportState() {
+        zoomChart.setDisable(busy || query == null); resetZoom.setDisable(busy || query == null);
         exportReadings.setDisable(currentResult == null || currentResult.readings().isEmpty());
         exportChart.setDisable(currentSeries.isEmpty());
         exportCsv.setDisable(busy || currentResult == null || currentResult.readings().isEmpty());
@@ -801,6 +836,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         findWeather.setDisable(value);
         filterContent.setDisable(value || query == null);
         resolution.setDisable(value);
+        zoomChart.setDisable(value || query == null); resetZoom.setDisable(value || query == null);
         comparisonControls.setDisable(value || city.getValue() == null);
         refreshExportState();
         progress.setVisible(value);

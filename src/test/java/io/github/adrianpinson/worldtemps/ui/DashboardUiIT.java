@@ -404,6 +404,20 @@ class DashboardUiIT {
         } finally { fx(() -> { dialog.close(); return null; }); worker.shutdownNow(); }
     }
 
+    @Test void chartZoomKeepsFullSummaryTableAndExport() throws Exception {
+        fx(() -> {
+            date("chart-from").setValue(LocalDate.of(2025,1,10)); date("chart-to").setValue(LocalDate.of(2025,1,20));
+            button("zoom-chart").fire();
+            assertEquals(11, chart().getData().get(0).getData().size());
+            assertEquals("90", label("count-value").getText()); assertEquals(90, table().getItems().size());
+            return null;
+        });
+        Path exported = temporary.resolve("zoom-chart.csv");
+        fx(() -> view.exportChartData(exported)).get(15,TimeUnit.SECONDS);
+        assertEquals(91,Files.readAllLines(exported).size());
+        fx(() -> { button("reset-zoom").fire(); assertEquals(90,chart().getData().get(0).getData().size()); return null; });
+    }
+
     private void capture(String filename) throws Exception {
         view.applyCss();
         view.layout();
