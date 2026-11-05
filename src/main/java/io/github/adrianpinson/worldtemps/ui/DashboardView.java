@@ -58,6 +58,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
     private final ComboBox<Location> comparisonA = new ComboBox<>();
     private final ComboBox<Location> comparisonB = new ComboBox<>();
     private final ComboBox<Resolution> resolution = new ComboBox<>();
+    private final Button anomalies = new Button("Analyze anomalies");
     private final Button compare = new Button("Compare cities");
     private final HBox comparisonControls = new HBox(10);
     private final MenuButton exportCsv = new MenuButton("Export CSV");
@@ -292,7 +293,7 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         }
         compare.setId("compare-cities");
         compare.getStyleClass().add("secondary-button");
-        comparisonControls.getChildren().addAll(label("Compare with", "muted"), comparisonA, comparisonB, compare);
+        comparisonControls.getChildren().addAll(label("Compare with", "muted"), comparisonA, comparisonB, compare, anomalies);
         comparisonControls.setAlignment(Pos.CENTER_LEFT);
         comparisonControls.setDisable(true);
         chartEmpty.setId("chart-empty");
@@ -387,6 +388,15 @@ public final class DashboardView extends BorderPane implements AutoCloseable {
         });
         apply.setOnAction(e -> applyFilters());
         compare.setOnAction(e -> applyFilters());
+        anomalies.setId("analyze-anomalies");
+        anomalies.setOnAction(e -> {
+            if (query == null || city.getValue() == null) return;
+            DashboardQuery snapshot = query;
+            Location selected = city.getValue();
+            AnomalyDialog.show(getScene().getWindow(), selected, query.firstDate().orElseThrow().getYear(),
+                    query.lastDate().orElseThrow().getYear(),
+                    () -> snapshot.apply(new Filter(null, null, selected, null, null)).readings(), imports);
+        });
         city.setOnAction(e -> {
             if (!updating) {
                 if (city.getValue() == null) {

@@ -372,6 +372,38 @@ class DashboardUiIT {
         });
     }
 
+    @Test void anomalyDialogCalculatesCoverageAndReportsMissingMonths() throws Exception {
+        var worker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        var ready = new CompletableFuture<Void>();
+        Dialog<Void> dialog = fx(() -> {
+            assertFalse(button("analyze-anomalies").isDisabled());
+            var city = new Location("US", "Texas", "Longview");
+            var rows = java.util.List.of(
+                    new Reading("America", "US", "Texas", "Longview", LocalDate.of(2020,1,1), 40),
+                    new Reading("America", "US", "Texas", "Longview", LocalDate.of(2021,1,1), 45));
+            var pane = AnomalyDialog.show(stage, city, 2020, 2021, () -> rows, worker);
+            @SuppressWarnings("unchecked") TableView<io.github.adrianpinson.worldtemps.service.TemperatureAnomalies.Month> table =
+                    (TableView<io.github.adrianpinson.worldtemps.service.TemperatureAnomalies.Month>) pane.getDialogPane().lookup("#anomaly-table");
+            table.getItems().addListener((javafx.collections.ListChangeListener<io.github.adrianpinson.worldtemps.service.TemperatureAnomalies.Month>) change -> {
+                if (table.getItems().size() == 12) ready.complete(null);
+            });
+            ((Button) pane.getDialogPane().lookup("#calculate-anomalies")).fire();
+            return pane;
+        });
+        try {
+            ready.get(15, TimeUnit.SECONDS);
+            fx(() -> {
+                TableView<?> table = (TableView<?>) dialog.getDialogPane().lookup("#anomaly-table");
+                var first = (io.github.adrianpinson.worldtemps.service.TemperatureAnomalies.Month) table.getItems().get(0);
+                assertEquals(5.0, first.anomalyF()); assertEquals(1, first.targetDays());
+                assertEquals(31, first.targetExpectedDays());
+                var missing = (io.github.adrianpinson.worldtemps.service.TemperatureAnomalies.Month) table.getItems().get(1);
+                assertNull(missing.anomalyF());
+                return null;
+            });
+        } finally { fx(() -> { dialog.close(); return null; }); worker.shutdownNow(); }
+    }
+
     private void capture(String filename) throws Exception {
         view.applyCss();
         view.layout();
